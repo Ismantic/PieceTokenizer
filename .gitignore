@@ -1,0 +1,7 @@
+# Build outputs
+build/
+*.o
+
+# Model outputs
+*.model
+*.vocab
