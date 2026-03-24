@@ -3,8 +3,8 @@ set(LIB_SRCS
     misc.cc
     ustr.cc
     sentence.cc
-    new_counter.cc
-    new_piecer.cc
+    sentencepiece_counter.cc
+    sentencepiece_tokenizer.cc
     new_normalizer.cc
     piece_tokenizer.cc
     piece_counter.cc

@@ -9,8 +9,8 @@
 
 #include "piece_spec.h"
 
-#include "new_counter.h"
-#include "new_piecer.h"
+#include "sentencepiece_counter.h"
+#include "sentencepiece_tokenizer.h"
 #include "new_normalizer.h"
 
 #include "naive_counter.h"
@@ -73,8 +73,8 @@ void run_test_simple() {
 
 
 
-void run_new_counter_test_naive() {
-  const std::string input_file = "new_counter.cc";
+void run_sentencepiece_counter_test_naive() {
+  const std::string input_file = "sentencepiece_counter.cc";
   const std::string model_prefix = "test";
   int size = 200+256+3;
 
@@ -89,7 +89,7 @@ void run_new_counter_test_naive() {
   NormalizerSpec normalizer_spec;
   normalizer_spec.SetName("identity");
 
-  std::cout << "NewCounter" << std::endl;
+  std::cout << "SentencePieceCounter" << std::endl;
 
   NaiveCounter counter(counter_spec, normalizer_spec);
 
@@ -119,7 +119,7 @@ void run_new_counter_test_naive() {
 
 }
 
-void run_new_counter_test_simple() {
+void run_sentencepiece_counter_test_simple() {
   const std::string input_file = "text.txt";
   const std::string model_prefix = "test";
   int size = 1500+3;
@@ -135,7 +135,7 @@ void run_new_counter_test_simple() {
   NormalizerSpec normalizer_spec;
   normalizer_spec.SetName("identity");
 
-  std::cout << "NewCounter" << std::endl;
+  std::cout << "SentencePieceCounter" << std::endl;
 
   SimpleCounter counter(counter_spec, normalizer_spec);
 
@@ -168,7 +168,7 @@ void run_new_counter_test_simple() {
 
 
 
-void run_new_counter_test_piece() {
+void run_sentencepiece_counter_test_piece() {
   const std::string input_file = "text.txt";
   const std::string model_prefix = "test";
   int size = 1500+256+3;
@@ -183,7 +183,7 @@ void run_new_counter_test_piece() {
 
   NormalizerSpec normalizer_spec;
 
-  std::cout << "NewCounter" << std::endl;
+  std::cout << "SentencePieceCounter" << std::endl;
 
   BytePieceCounter counter(counter_spec, normalizer_spec);
 
@@ -254,8 +254,8 @@ void run_test() {
   std::cout << std::endl;
 }
 
-void run_new_counter_test() {
-  std::cout << "run_new_counter_test" << std::endl;
+void run_sentencepiece_counter_test() {
+  std::cout << "run_sentencepiece_counter_test" << std::endl;
   const std::string input_file = "text.txt";
   const std::string model_prefix = "test";
   int size = 8000+256+3;
@@ -270,9 +270,9 @@ void run_new_counter_test() {
 
   NormalizerSpec normalizer_spec;
 
-  std::cout << "NewCounter" << std::endl;
+  std::cout << "SentencePieceCounter" << std::endl;
 
-  NewCounter counter(counter_spec, normalizer_spec);
+  SentencePieceCounter counter(counter_spec, normalizer_spec);
 
   counter.Count();
   counter.Save();
@@ -281,7 +281,7 @@ void run_new_counter_test() {
   proto.Load("test.model");
   //counter.Serialize(&proto);
 
-  NewModel m(proto);
+  SentencePieceTokenizer m(proto);
 
   std::string text = "hello world 中文";
 
@@ -519,10 +519,10 @@ int main(int argc, char *argv[]) {
     //piece::run_test_naive();
     //piece::run_test_simple();
     //piece::run_normalizer_test();
-    //piece::run_new_counter_test();
-    //piece::run_new_counter_test_naive();
-    //piece::run_new_counter_test_simple();
-    piece::run_new_counter_test_piece();
+    //piece::run_sentencepiece_counter_test();
+    //piece::run_sentencepiece_counter_test_naive();
+    //piece::run_sentencepiece_counter_test_simple();
+    piece::run_sentencepiece_counter_test_piece();
     //piece::run_test();
     //piece::run_test_common();
 

@@ -1,5 +1,5 @@
-#include "new_piecer.h"
-#include "new_counter.h"
+#include "sentencepiece_tokenizer.h"
+#include "sentencepiece_counter.h"
 
 #include <algorithm>
 #include <functional>
@@ -12,15 +12,15 @@
 
 namespace piece {
 
-NewModel::NewModel(const Model& model)
+SentencePieceTokenizer::SentencePieceTokenizer(const Model& model)
     : model_(&model),
       normalizer_(std::make_unique<Normalizer>(model.GetNormalizerSpec())) {
         InitPieces();
 }
 
-NewModel::~NewModel() {}
+SentencePieceTokenizer::~SentencePieceTokenizer() {}
 
-void NewModel::InitPieces() {
+void SentencePieceTokenizer::InitPieces() {
     pieces_.clear();
     reserve_.clear();
     unk_id_ = -1;
@@ -60,7 +60,7 @@ void NewModel::InitPieces() {
               << "ReservedSize=" << reserve_.size() << std::endl;
 }
 
-int NewModel::PieceID(std::string_view piece) const {
+int SentencePieceTokenizer::PieceID(std::string_view piece) const {
     auto it = reserve_.find(piece);
     if (it != reserve_.end()) {
         return it->second;
@@ -72,7 +72,7 @@ int NewModel::PieceID(std::string_view piece) const {
     return unk_id_;
 }
 
-EncodeResult NewModel::Encode(std::string_view str) const {
+EncodeResult SentencePieceTokenizer::Encode(std::string_view str) const {
     std::string ns = normalizer_->Normalize(str);
     std::string_view text = ns;
     if (text.empty()) {
@@ -198,7 +198,7 @@ EncodeResult NewModel::Encode(std::string_view str) const {
     return output;
 }
 
-std::string NewModel::Decode(const std::vector<int>& ids) const {
+std::string SentencePieceTokenizer::Decode(const std::vector<int>& ids) const {
     std::string result;
     result.reserve(ids.size() * 3); 
     

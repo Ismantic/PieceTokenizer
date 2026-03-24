@@ -80,14 +80,14 @@ using EncodeResult = std::vector<std::pair<std::string,int>>;
 
 class Model;
 
-class NewModel {
+class SentencePieceTokenizer {
 
 public:
   using StrToInt = std::unordered_map<std::string_view, int>;
 
-  explicit NewModel(const Model& model);
+  explicit SentencePieceTokenizer(const Model& model);
 
-  virtual ~NewModel();
+  virtual ~SentencePieceTokenizer();
 
   int PieceID(std::string_view piece) const;
 

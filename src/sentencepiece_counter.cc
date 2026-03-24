@@ -1,4 +1,4 @@
-#include "new_counter.h"
+#include "sentencepiece_counter.h"
 
 #include <iostream>
 #include <sstream>
@@ -17,16 +17,16 @@
 
 namespace piece {
 
-NewCounter::NewCounter(const CounterSpec &counter_spec, 
+SentencePieceCounter::SentencePieceCounter(const CounterSpec &counter_spec, 
                  const NormalizerSpec &normalizer_spec)
     : counter_spec_(counter_spec),
       normalizer_spec_(normalizer_spec) {
     InitMetaPieces();
 }
 
-NewCounter::~NewCounter() {}
+SentencePieceCounter::~SentencePieceCounter() {}
 
-bool NewCounter::InitMetaPieces() {
+bool SentencePieceCounter::InitMetaPieces() {
     if (counter_spec_.unk_id() >= 0) {
         meta_pieces_[counter_spec_.unk_id()] = std::make_pair(
             counter_spec_.unk_piece(), Model::Piece::UNKNOWN);
@@ -62,7 +62,7 @@ bool NewCounter::InitMetaPieces() {
     return true;
 }
 
-void NewCounter::SplitSentencesByWhitespace() {
+void SentencePieceCounter::SplitSentencesByWhitespace() {
     LOG(INFO) << "Tokenizing input sentences with whitespace: "
               << sentences_.size();
     const std::string_view space = normalizer_spec_.GetSpace();
@@ -77,7 +77,7 @@ void NewCounter::SplitSentencesByWhitespace() {
     LOG(INFO) << "Done! " << sentences_.size(); 
 }
 
-bool NewCounter::LoadSentences() {
+bool SentencePieceCounter::LoadSentences() {
 
     uint32_t UNK = counter_spec_.GetUnkUnicode();
 
@@ -151,7 +151,7 @@ bool NewCounter::LoadSentences() {
     return true;
 }
 
-NewCounter::Symbol* NewCounter::GetCharSymbol(uint32_t c) {
+SentencePieceCounter::Symbol* SentencePieceCounter::GetCharSymbol(uint32_t c) {
   const uint64_t freq = misc::FindWithDefault(required_chars_, c, 1);
   const auto it = symbols_cache_.find(c);
   if (it != symbols_cache_.end()) {
@@ -167,8 +167,8 @@ NewCounter::Symbol* NewCounter::GetCharSymbol(uint32_t c) {
   return s;    
 }
 
-NewCounter::Symbol* NewCounter::GetPairSymbol(const Symbol* left, 
-                                              const Symbol* right) {
+SentencePieceCounter::Symbol* SentencePieceCounter::GetPairSymbol(const Symbol* left, 
+                                                                  const Symbol* right) {
   if (left == nullptr || right == nullptr || left->is_unk || right->is_unk) {
     return nullptr;
   }
@@ -193,7 +193,7 @@ NewCounter::Symbol* NewCounter::GetPairSymbol(const Symbol* left,
   return s;
 }
 
-void NewCounter::AddNewPair(int sid, int left, int right) {
+void SentencePieceCounter::AddNewPair(int sid, int left, int right) {
   if (left == -1 || right == -1) return;
   auto *symbol = GetPairSymbol(symbols_[sid][left], symbols_[sid][right]);
   if (symbol != nullptr) {
@@ -202,7 +202,7 @@ void NewCounter::AddNewPair(int sid, int left, int right) {
   }
 }
 
-void NewCounter::ComputeFreq(Symbol *symbol) const {
+void SentencePieceCounter::ComputeFreq(Symbol *symbol) const {
     if (symbol->freq > 0) {
         return;
     }
@@ -218,7 +218,7 @@ void NewCounter::ComputeFreq(Symbol *symbol) const {
     }
 }
 
-void NewCounter::UpdateActiveSymbols() {
+void SentencePieceCounter::UpdateActiveSymbols() {
     std::vector<Symbol*> symbols;
     for (auto &it : symbols_cache_) {
         Symbol* symbol = it.second;
@@ -245,14 +245,14 @@ void NewCounter::UpdateActiveSymbols() {
   active_symbols_.clear();
   active_symbols_.insert(symbols.begin(), symbols.begin() + size);
 }
-int NewCounter::GetPrevIndex(int sid, int index) const {
+int SentencePieceCounter::GetPrevIndex(int sid, int index) const {
     for (int i = index-1; i >= 0; --i) {
         if (symbols_[sid][i] == nullptr) continue;
         return i;
     }
     return -1;
 }
-int NewCounter::GetNextIndex(int sid, int index) const {
+int SentencePieceCounter::GetNextIndex(int sid, int index) const {
     for (size_t i = index + 1; i < symbols_[sid].size(); ++i) {
         if (symbols_[sid][i] == nullptr) continue;
         return i;
@@ -260,7 +260,7 @@ int NewCounter::GetNextIndex(int sid, int index) const {
     return -1;
 }
 
-void NewCounter::ResetFreq(int sid, int left, int right, const Symbol* best) {
+void SentencePieceCounter::ResetFreq(int sid, int left, int right, const Symbol* best) {
     if (left == -1 || right == -1)  return;
     auto* symbol = GetPairSymbol(symbols_[sid][left], symbols_[sid][right]);
     if (symbol != nullptr && symbol != best) {
@@ -268,11 +268,11 @@ void NewCounter::ResetFreq(int sid, int left, int right, const Symbol* best) {
     }
 }
 
-std::string NewCounter::Symbol::ToString() const {
+std::string SentencePieceCounter::Symbol::ToString() const {
     return ustr::UnicodeTextToUTF8(chars);
 }
 
-bool NewCounter::Count() {
+bool SentencePieceCounter::Count() {
     symbols_.clear();
     allocated_.clear();
     symbols_cache_.clear();
@@ -402,7 +402,7 @@ bool NewCounter::Count() {
     return true;
 }
 
-bool NewCounter::Serialize(Model* model) const {
+bool SentencePieceCounter::Serialize(Model* model) const {
 
     model->Clear();
 
@@ -428,7 +428,7 @@ bool NewCounter::Serialize(Model* model) const {
     return true;
 }
 
-bool NewCounter::Save() const {
+bool SentencePieceCounter::Save() const {
     std::string filename = counter_spec_.model_prefix()+".model";
     LOG(INFO) << "Saving model: " << filename;
     Model model;

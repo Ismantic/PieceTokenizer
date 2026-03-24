@@ -17,14 +17,14 @@
 
 namespace piece {
 
-class NewCounter {
+class SentencePieceCounter {
 public:
   using Sentence = std::pair<std::string, int64_t>;
   using Sentences = std::vector<Sentence>;
 
-  NewCounter(const CounterSpec& counter_spec, 
+  SentencePieceCounter(const CounterSpec& counter_spec, 
           const NormalizerSpec& normalizer_spec);
-  virtual ~NewCounter();
+  virtual ~SentencePieceCounter();
 
 
   bool Count();
