@@ -16,8 +16,8 @@
 #include "naive_counter.h"
 #include "naive_tokenizer.h"
 
-#include "piece_counter.h"
-#include "piece_tokenizer.h"
+#include "bytepiece_counter.h"
+#include "bytepiece_tokenizer.h"
 
 namespace piece {
 

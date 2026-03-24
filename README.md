@@ -44,8 +44,8 @@ cmake --build build
 
 ```cpp
 #include "piece_spec.h"
-#include "piece_counter.h"
-#include "piece_tokenizer.h"
+#include "bytepiece_counter.h"
+#include "bytepiece_tokenizer.h"
 #include "new_normalizer.h"
 
 // 配置
@@ -85,8 +85,8 @@ src/
   naive_tokenizer.h/cc  - 链表优化的 BPE 训练与推理
   sentencepiece_counter.h/cc - Symbol 缓存 BPE 训练
   sentencepiece_tokenizer.h/cc - 高级编解码推理
-  piece_counter.h/cc    - BytePiece 训练
-  piece_tokenizer.h/cc  - BytePiece 推理（Trie 最长匹配）
+  bytepiece_counter.h/cc - BytePiece 训练
+  bytepiece_tokenizer.h/cc - BytePiece 推理（Trie 最长匹配）
   new_normalizer.h/cc   - NFKC Unicode 归一化
   ustr.h/cc             - UTF-8 编解码
   sentence.h/cc         - 文件 I/O
