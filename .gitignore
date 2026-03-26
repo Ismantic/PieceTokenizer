@@ -5,3 +5,4 @@ build/
 # Model outputs
 *.model
 *.vocab
+!data/tokenizer.model

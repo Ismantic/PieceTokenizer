@@ -10,6 +10,9 @@
 #include <math.h>
 #include <limits>
 #include <iostream>
+#include <thread>
+#include <atomic>
+#include <mutex>
 #include "darts.h"
 #include "piece_spec.h"
 #include "common.h"
@@ -345,24 +348,17 @@ public:
     virtual ~BytePieceCounter() {}
     
     bool Count() {
-        if (!LoadSentences()) {
+        if (!LoadAndSplitSentences()) {
             LOG(ERROR) << "Failed to load sentences.";
             return false;
         }
-        
-        SplitSentencesByWhitespace();
-        
-        std::vector<std::string> texts;
-        for (const auto& sentence : sentences_) {
-            texts.push_back(sentence.first);
-        }
-        
-        LOG(INFO) << "Starting BytePiece training with " << texts.size() << " texts";
-        
-        CountRaw(texts);
+
+        LOG(INFO) << "Starting BytePiece training with " << sentences_.size() << " unique tokens";
+
+        CountRaw(sentences_);
         PruneRaw();
-        
-        auto pieces_count = CountPieces(texts);
+
+        auto pieces_count = CountPieces(sentences_);
         auto pruned_pieces = PrunePieces(pieces_count);
 
         std::vector<std::pair<std::string, int>> sorted_pieces(pruned_pieces.begin(), pruned_pieces.end());
@@ -399,8 +395,10 @@ public:
     bool Serialize(Model* model) const {
         model->Clear();
 
+        // Total pieces = meta_pieces + trained pieces
+        size_t total = meta_pieces_.size() + pieces_.size();
         size_t fid = 0;
-        for (int id = 0; id < counter_spec_.vocab_size(); ++id) {
+        for (size_t id = 0; id < total; ++id) {
             const auto it = meta_pieces_.find(id);
             if (it != meta_pieces_.end()) {
                 auto *p = model->InsertPieces();
@@ -412,21 +410,105 @@ public:
                 auto *p = model->InsertPieces();
                 p->SetPiece(w.first);
                 p->SetScore(w.second);
-            } else {
-                LOG(ERROR) << "Invalid piece id: " << id;
-                return false;
             }
         }
-        
-        model->SetCounterSpec(counter_spec_);
+
+        // Update vocab_size in counter_spec to match actual count
+        CounterSpec spec = counter_spec_;
+        spec.set_vocab_size(total);
+        model->SetCounterSpec(spec);
         model->SetNormalizerSpec(normalizer_spec_);
-        
+
         return true;
     }
     
 private:
+    using Sentence = std::pair<std::string, int64_t>;
+    using Sentences = std::vector<Sentence>;
     using Str2Int = std::unordered_map<std::string, int>;
     using Str2Float = std::unordered_map<std::string, float_t>;
+
+    size_t GetWorkerCount(size_t work_items) const {
+        if (work_items <= 1) {
+            return 1;
+        }
+        const unsigned int hw = std::thread::hardware_concurrency();
+        const size_t max_workers = hw == 0 ? 4 : static_cast<size_t>(hw);
+        return std::max<size_t>(1, std::min(work_items, max_workers));
+    }
+
+    template <typename Fn>
+    void ParallelFor(size_t total, Fn&& fn) const {
+        const size_t workers = GetWorkerCount(total);
+        if (workers <= 1) {
+            fn(0, total, 0);
+            return;
+        }
+
+        std::vector<std::thread> threads;
+        threads.reserve(workers);
+        const size_t chunk = (total + workers - 1) / workers;
+        for (size_t worker = 0; worker < workers; ++worker) {
+            const size_t begin = worker * chunk;
+            const size_t end = std::min(total, begin + chunk);
+            if (begin >= end) {
+                break;
+            }
+            threads.emplace_back([&, begin, end, worker]() {
+                fn(begin, end, worker);
+            });
+        }
+
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    }
+
+    template <typename Map>
+    static void MergeCounts(Map* dest, const Map& src) {
+        for (const auto& [key, value] : src) {
+            (*dest)[key] += value;
+        }
+    }
+
+    template <typename Map, typename CountFn>
+    Map ParallelBatchCount(size_t total, size_t batch_size, CountFn&& count_fn) const {
+        Map merged;
+        if (total == 0) {
+            return merged;
+        }
+
+        const size_t workers = GetWorkerCount((total + batch_size - 1) / batch_size);
+        if (workers <= 1) {
+            return count_fn(0, total);
+        }
+
+        std::atomic<size_t> next_begin{0};
+        std::mutex merge_mu;
+        std::vector<std::thread> threads;
+        threads.reserve(workers);
+
+        for (size_t worker = 0; worker < workers; ++worker) {
+            threads.emplace_back([&, worker]() {
+                while (true) {
+                    const size_t begin = next_begin.fetch_add(batch_size);
+                    if (begin >= total) {
+                        break;
+                    }
+                    const size_t end = std::min(total, begin + batch_size);
+                    Map batch_counts = count_fn(begin, end);
+                    std::lock_guard<std::mutex> lock(merge_mu);
+                    MergeCounts(&merged, batch_counts);
+                }
+            });
+        }
+
+        for (auto& thread : threads) {
+            thread.join();
+        }
+
+        return merged;
+    }
     
     bool InitMetaPieces() {
         if (counter_spec_.unk_id() >= 0) {
@@ -464,78 +546,73 @@ private:
         return true;
     }
     
-    bool LoadSentences() {
-        LOG(INFO) << "Loading sentences ...";
-        
+    bool LoadAndSplitSentences() {
+        LOG(INFO) << "Loading and splitting sentences ...";
+
+        const Normalizer normalizer(normalizer_spec_);
+        const std::string_view space = normalizer_spec_.GetSpace();
+
         auto iter_ = std::make_unique<MultiFileSentenceIterator>(
             std::vector<std::string>(counter_spec_.input().begin(),
                                   counter_spec_.input().end()));
         SentenceIterator* sentence_iterator_ = iter_.get();
-        
+
+        std::unordered_map<std::string, int64_t> tokens;
+        size_t line_count = 0;
+
         for (; !sentence_iterator_->done(); sentence_iterator_->Next()) {
             std::string sentence = sentence_iterator_->value();
-            if (sentence.empty()) {
-                continue;
+            if (sentence.empty()) continue;
+
+            std::string normalized = normalizer.Normalize(sentence);
+            for (const auto& w : ustr::SplitText(normalized, space)) {
+                tokens[std::string(w)] += 1;
             }
-            sentences_.emplace_back(std::make_pair(sentence, 1));
+
+            if (++line_count % 1000000 == 0) {
+                LOG(INFO) << "Processed " << line_count << " lines, "
+                          << tokens.size() << " unique tokens";
+            }
         }
-        
-        LOG(INFO) << "Normalizing sentences ...";
-        const Normalizer normalizer(normalizer_spec_);
-        for (size_t i = 0; i < sentences_.size(); ++i) {
-            auto* s = &sentences_[i].first;
-            *s = normalizer.Normalize(*s);
+
+        sentences_.clear();
+        sentences_.reserve(tokens.size());
+        for (auto& [word, count] : tokens) {
+            sentences_.emplace_back(std::move(word), count);
         }
-        
-        LOG(INFO) << "Done! preprocessed " << sentences_.size() << " sentences.";
+
+        LOG(INFO) << "Done! " << line_count << " lines, "
+                  << sentences_.size() << " unique tokens";
         return true;
     }
     
-    void SplitSentencesByWhitespace() {
-        LOG(INFO) << "Tokenizing input sentences with whitespace: "
-                << sentences_.size();
-        const std::string_view space = normalizer_spec_.GetSpace();
-        std::unordered_map<std::string, int64_t> tokens;
-        std::vector<Sentence> rs;
-        for (const auto& s : sentences_) {
-            for (const auto& w : ustr::SplitText(s.first, space)) {
-                tokens[std::string(w)] += s.second;
-                rs.emplace_back(std::make_pair(std::string(w),1));
-            }
-        }
-        //sentences_ = misc::Sorted(tokens);
-        sentences_ = rs;
-        LOG(INFO) << "Done! " << sentences_.size();
-    }
-    
-    void CountRaw(const std::vector<std::string>& sentences) {
+    void CountRaw(const Sentences& sentences) {
         LOG(INFO) << "Counting raw substrings...";
-        
-        // 初始化N_数组，确保与Python版本一致
+
         N_.clear();
         N_.resize(max_piece_count_ + 1);
-        
-        // 空字符串的计数初始化为0
         N_[0][""] = 0;
-        
-        for (const auto& text : sentences) {
+
+        for (const auto& [text, freq] : sentences) {
             for (size_t i = 0; i < text.length(); ++i) {
-                for (size_t j = 0; j <= max_piece_count_; ++j) {
-                    // Python: k = text[i:i + j]
-                    // 这里使用substr(i, j)来模拟Python的切片操作
-                    if (i + j <= text.length()) {
-                        std::string k = text.substr(i, j);
-                        N_[j][k] += 1;
-                    }
+                N_[0][""] += freq;
+
+                std::string piece;
+                piece.reserve(std::min(max_piece_count_, text.length() - i));
+
+                const size_t max_len = std::min(max_piece_count_, text.length() - i);
+                for (size_t j = 1; j <= max_len; ++j) {
+                    piece.push_back(text[i + j - 1]);
+                    N_[j][piece] += freq;
                 }
             }
         }
-        
-        int cnt = 0;
+
+        size_t cnt = 0;
         for (size_t i = 0; i < N_.size(); ++i) {
             cnt += N_[i].size();
         }
-    
+
         LOG(INFO) << "Done counting raw substrings " << cnt;
     }
     
@@ -758,18 +835,24 @@ private:
         return tokens;
     } 
 
-   Str2Int CountPieces(const std::vector<std::string>& sentences) {
+   Str2Int CountPieces(const Sentences& sentences) {
         LOG(INFO) << "Counting pieces...";
-        Str2Int pieces;
-        
-        for (const auto& sentence : sentences) {
-            auto tokens = Tokenize(sentence);
-            for (const auto& piece : tokens) {
-                if (piece.length() == 0) continue;
-                pieces[piece]++;
-            }
-        }
-        
+        const size_t batch_size = 2048;
+        Str2Int pieces = ParallelBatchCount<Str2Int>(
+            sentences.size(), batch_size,
+            [&](size_t begin, size_t end) {
+                Str2Int batch_counts;
+                for (size_t idx = begin; idx < end; ++idx) {
+                    const auto& [text, freq] = sentences[idx];
+                    auto tokens = Tokenize(text);
+                    for (const auto& piece : tokens) {
+                        if (piece.length() == 0) continue;
+                        batch_counts[piece] += freq;
+                    }
+                }
+                return batch_counts;
+            });
+
         LOG(INFO) << "Found " << pieces.size() << " unique pieces";
         return pieces;
     }
@@ -782,14 +865,21 @@ private:
         }
         
         BytePieceTokenizer tokenizer(dict);
-        
-        Str2Int counter;
-        
-        for (const auto& [str, cnt] : drop) {
-            for (const auto& token : tokenizer.Tokenize(str)) {
-                counter[token] += cnt;
-            }
-        }
+
+        std::vector<std::pair<std::string, int>> drop_entries(drop.begin(), drop.end());
+        const size_t batch_size = 1024;
+        Str2Int counter = ParallelBatchCount<Str2Int>(
+            drop_entries.size(), batch_size,
+            [&](size_t begin, size_t end) {
+                Str2Int batch_counts;
+                for (size_t idx = begin; idx < end; ++idx) {
+                    const auto& [str, cnt] = drop_entries[idx];
+                    for (const auto& token : tokenizer.Tokenize(str)) {
+                        batch_counts[token] += cnt;
+                    }
+                }
+                return batch_counts;
+            });
         return counter;
     }
 
@@ -882,9 +972,6 @@ private:
             }
         }
     }
-    
-    using Sentence = std::pair<std::string, int64_t>;
-    using Sentences = std::vector<Sentence>;
     
     std::map<int, std::pair<std::string, Model::Piece::Type>> meta_pieces_;
     std::vector<std::pair<std::string, float>> byte_pieces_;
