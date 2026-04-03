@@ -26,9 +26,9 @@ class CMakeBuild(build_ext):
         subprocess.check_call(["cmake", "--build", "."] + build_args, cwd=build_temp)
 
 setup(
-    name="isma_tokenizer",
+    name="piece_tokenizer",
     version="0.1.0",
-    description="IsmaTokenizer Python bindings",
-    ext_modules=[CMakeExtension("isma_tokenizer")],
+    description="PieceTokenizer Python bindings",
+    ext_modules=[CMakeExtension("piece_tokenizer")],
     cmdclass={"build_ext": CMakeBuild},
 )

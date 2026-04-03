@@ -79,9 +79,9 @@ echo "231 192 163 897 411 591" | piece-tokenizer decode --model tokenizer.model
 ## Python 接口
 
 ```python
-import isma_tokenizer
+import piece_tokenizer
 
-tok = isma_tokenizer.Tokenizer()
+tok = piece_tokenizer.Tokenizer()
 tok.load("tokenizer.model")
 
 tok.encode("你好世界")          # → [('你', 897), ('好', 411), ...]
@@ -120,7 +120,7 @@ src/
   misc.h                - 工具函数
   normalization_data.h  - 归一化规则数据
 python/
-  isma_tokenizer.cc     - pybind11 Python 绑定
+  piece_tokenizer.cc     - pybind11 Python 绑定
 ```
 
 ## License

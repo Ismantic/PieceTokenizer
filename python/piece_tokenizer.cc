@@ -129,8 +129,8 @@ private:
     std::unique_ptr<BytePieceTokenizer> bp_tok_;
 };
 
-PYBIND11_MODULE(isma_tokenizer, m) {
-    m.doc() = "IsmaTokenizer Python bindings";
+PYBIND11_MODULE(piece_tokenizer, m) {
+    m.doc() = "PieceTokenizer Python bindings";
 
     py::class_<Tokenizer>(m, "Tokenizer")
         .def(py::init<>())

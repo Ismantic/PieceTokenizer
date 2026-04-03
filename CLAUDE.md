@@ -10,7 +10,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 
 # Run all tests
-./build/isma_tokenizer_test
+./build/piece_tokenizer_test
 
 # Build with Python bindings
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON=ON
@@ -43,9 +43,9 @@ Each Counter implements `Count()` + `Save()`. Each Tokenizer implements `Encode(
 - `darts.h` / `trie.h` — Double-Array Trie implementation used by BytePieceTokenizer and Normalizer
 - `sentence.h/cc` — file I/O (ReadableFile, WritableFile, MultiFileSentenceIterator)
 
-**Test framework** (`test.h/cc`) — lightweight custom framework mimicking gtest macros (TEST, EXPECT_EQ, ASSERT_EQ, etc.). Tests are in `tokenizer_test.cc` and `ustr_test.cc`, unified into one binary `isma_tokenizer_test`.
+**Test framework** (`test.h/cc`) — lightweight custom framework mimicking gtest macros (TEST, EXPECT_EQ, ASSERT_EQ, etc.). Tests are in `tokenizer_test.cc` and `ustr_test.cc`, unified into one binary `piece_tokenizer_test`.
 
-**Python bindings** (`python/isma_tokenizer.cc`) — pybind11 wrapper exposing a `Tokenizer` class with `load()`, `encode()`, `decode()`, `encode_as_ids()`, `encode_as_pieces()`.
+**Python bindings** (`python/piece_tokenizer.cc`) — pybind11 wrapper exposing a `Tokenizer` class with `load()`, `encode()`, `decode()`, `encode_as_ids()`, `encode_as_pieces()`.
 
 ## Language
 
