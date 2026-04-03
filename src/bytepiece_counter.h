@@ -1,25 +1,18 @@
 #pragma once
-#include <string>
-#include <vector>
-#include <map>
-#include <unordered_map>
-#include <queue>
-#include <memory>
-#include <algorithm>
-#include <stdint.h>
-#include <math.h>
-#include <limits>
-#include <iostream>
-#include <thread>
 #include <atomic>
+#include <limits>
+#include <map>
+#include <memory>
 #include <mutex>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
 #include "bytepiece_tokenizer.h"
-#include "piece_spec.h"
 #include "common.h"
+#include "piece_spec.h"
 #include "ustr.h"
-#include "misc.h"
-#include "sentence.h"
-#include "normalizer.h"
 
 namespace piece {
 class BytePieceCounter {
@@ -99,12 +92,12 @@ private:
     CounterSpec counter_spec_;
     NormalizerSpec normalizer_spec_;
     
-    size_t max_piece_count_;
-    size_t max_piece_size_;
-    size_t min_count_;
+    static constexpr size_t max_piece_count_ = 6;
+    static constexpr size_t max_piece_size_ = 18;
+    static constexpr size_t min_count_ = 2;
+    static constexpr float_t INF = std::numeric_limits<float_t>::infinity();
     std::vector<std::vector<float_t>> T_;
     std::vector<std::unordered_map<std::string, float_t>> N_;
-    const float_t INF = std::numeric_limits<float_t>::infinity();
 };
 
 } // namespace piece

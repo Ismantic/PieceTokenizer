@@ -1,11 +1,8 @@
 #pragma once
 
-#include <cstdint>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include "common.h"
@@ -41,14 +38,12 @@ private:
 
     int PieceID(std::string_view piece) const;
     std::vector<Match> GetMatches(std::string_view text) const;
-    void InitFromModel();
-    void InitFromDict(const std::unordered_map<std::string, float_t>& dict);
+    void InitTrie(const std::unordered_map<std::string, float_t>& dict);
 
     const Model* model_ = nullptr;
-    const std::unique_ptr<Normalizer> normalizer_;
+    Normalizer normalizer_;
     StrToInt pieces_;
-    StrToInt reserve_;
-    int unk_id_ = 0;
+    int unk_id_ = -1;
     new_darts::DoubleArray<int> trie_;
     std::unordered_map<int, float_t> value_map_;
 };

@@ -1,5 +1,6 @@
 #include "bytepiece_counter.h"
 
+#include <cmath>
 #include <future>
 
 namespace piece {
@@ -7,10 +8,7 @@ namespace piece {
 BytePieceCounter::BytePieceCounter(const CounterSpec& counter_spec,
                                    const NormalizerSpec& normalizer_spec)
     : counter_spec_(counter_spec),
-      normalizer_spec_(normalizer_spec),
-      max_piece_count_(6),
-      max_piece_size_(18),
-      min_count_(2) {
+      normalizer_spec_(normalizer_spec) {
   InitMetaPieces();
   InitT();
   N_.resize(max_piece_count_ + 1);
@@ -261,19 +259,7 @@ std::vector<std::string> BytePieceCounter::Tokenize(const std::string& text) con
 
   int i = 0;
   while (i < num) {
-    unsigned char c = static_cast<unsigned char>(text[i]);
-    int char_length = 1;
-    if (c < 128) {
-      char_length = 1;
-    } else if (c >= 192 && c < 224) {
-      char_length = 2;
-    } else if (c >= 224 && c < 240) {
-      char_length = 3;
-    } else if (c >= 240 && c < 248) {
-      char_length = 4;
-    } else if (c >= 128 && c < 192) {
-      char_length = 1;
-    }
+    const int char_length = ustr::OneUTF8Size(text.data() + i);
     for (int j = 0; j < char_length && i + j < num; ++j) {
       utf8_position[i + j] = j;
     }

@@ -4,31 +4,39 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
-#include <stdexcept>
 
 namespace piece {
 
 BytePieceTokenizer::BytePieceTokenizer(
     const std::unordered_map<std::string, float_t>& dict)
-    : model_(nullptr), normalizer_(nullptr) {
-    InitFromDict(dict);
+    : model_(nullptr), normalizer_(NormalizerSpec()) {
+    InitTrie(dict);
 }
 
 BytePieceTokenizer::BytePieceTokenizer(const Model& model)
     : model_(&model),
-      normalizer_(std::make_unique<Normalizer>(model.GetNormalizerSpec())) {
-    InitFromModel();
+      normalizer_(model.GetNormalizerSpec()) {
+    const auto& counter_spec = model_->GetCounterSpec();
+    unk_id_ = counter_spec.unk_id();
+
+    std::unordered_map<std::string, float_t> dict;
+    for (size_t i = 0; i < model_->PiecesSize(); ++i) {
+        const auto& piece = model_->GetPieces(i);
+        pieces_[piece.GetPiece()] = i;
+        if (piece.GetType() == Model::Piece::NORMAL) {
+            dict[piece.GetPiece()] = piece.GetScore();
+        }
+    }
+
+    InitTrie(dict);
+    LOG(INFO) << "PiecesSize=" << pieces_.size();
 }
 
 BytePieceTokenizer::~BytePieceTokenizer() = default;
 
 BytePieceTokenizer::EncodeResult BytePieceTokenizer::Encode(
     std::string_view text) const {
-    if (trie_.size() == 0) {
-        throw std::runtime_error("Tokenizer not initialized");
-    }
-
-    const std::string text_str = normalizer_->Normalize(text);
+    const std::string text_str = normalizer_.Normalize(text);
     const std::vector<std::string> tokens = Tokenize(text_str);
 
     EncodeResult output;
@@ -51,17 +59,13 @@ BytePieceTokenizer::EncodeResult BytePieceTokenizer::Encode(
 }
 
 std::string BytePieceTokenizer::Decode(const std::vector<int>& ids) const {
-    if (!model_) {
-        throw std::runtime_error("Tokenizer not initialized with a model");
-    }
-
     std::string result;
     result.reserve(ids.size() * 3);
 
     for (int id : ids) {
         if (id < 0 || id >= static_cast<int>(model_->PiecesSize())) {
             if (unk_id_ >= 0) {
-                result += model_->GetCounterSpec().unk_piece();
+                result += model_->GetPieces(unk_id_).GetPiece();
             }
             continue;
         }
@@ -80,7 +84,7 @@ std::string BytePieceTokenizer::Decode(const std::vector<int>& ids) const {
         }
     }
 
-    return normalizer_->ReplaceSpace(result);
+    return normalizer_.ReplaceSpace(result);
 }
 
 std::string BytePieceTokenizer::Decode(const EncodeResult& encoded) const {
@@ -131,15 +135,8 @@ std::vector<std::string> BytePieceTokenizer::Tokenize(
 }
 
 int BytePieceTokenizer::PieceID(std::string_view piece) const {
-    auto reserve_it = reserve_.find(piece);
-    if (reserve_it != reserve_.end()) {
-        return reserve_it->second;
-    }
-    auto piece_it = pieces_.find(piece);
-    if (piece_it != pieces_.end()) {
-        return piece_it->second;
-    }
-    return unk_id_;
+    const auto it = pieces_.find(piece);
+    return it != pieces_.end() ? it->second : unk_id_;
 }
 
 std::vector<BytePieceTokenizer::Match> BytePieceTokenizer::GetMatches(
@@ -170,37 +167,7 @@ std::vector<BytePieceTokenizer::Match> BytePieceTokenizer::GetMatches(
     return matches;
 }
 
-void BytePieceTokenizer::InitFromModel() {
-    if (!model_) {
-        LOG(ERROR) << "Model is not initialized.";
-        return;
-    }
-
-    pieces_.clear();
-    reserve_.clear();
-    value_map_.clear();
-
-    const auto& counter_spec = model_->GetCounterSpec();
-    unk_id_ = counter_spec.unk_id();
-
-    std::unordered_map<std::string, float_t> dict;
-    for (size_t i = 0; i < model_->PiecesSize(); ++i) {
-        const auto& piece = model_->GetPieces(i);
-        pieces_[piece.GetPiece()] = i;
-
-        if (piece.GetType() == Model::Piece::NORMAL) {
-            dict[piece.GetPiece()] = piece.GetScore();
-        } else {
-            reserve_[piece.GetPiece()] = i;
-        }
-    }
-
-    InitFromDict(dict);
-    LOG(INFO) << "Initialized tokenizer from model with " << dict.size()
-              << " pieces";
-}
-
-void BytePieceTokenizer::InitFromDict(
+void BytePieceTokenizer::InitTrie(
     const std::unordered_map<std::string, float_t>& dict) {
     float_t total = 0.0;
     for (const auto& [piece, score] : dict) {
@@ -216,19 +183,16 @@ void BytePieceTokenizer::InitFromDict(
     std::vector<int> values;
     int next_value = 1;
     for (const auto& [piece, score] : sorted_dict) {
-        const char* str = piece.c_str();
-        if (std::strlen(str) == 0) {
+        if (piece.empty()) {
             continue;
         }
-        strs.push_back(str);
+        strs.push_back(piece.c_str());
         value_map_[next_value] = std::log(score) - log_total;
         values.push_back(next_value);
         next_value++;
     }
 
     trie_.build(strs.size(), strs.data(), nullptr, values.data());
-    LOG(INFO) << "Initialized tokenizer from dictionary with " << dict.size()
-              << " entries";
 }
 
 }  // namespace piece
