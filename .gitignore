@@ -2,7 +2,12 @@
 build/
 *.o
 
+# Docs (local only)
+docs/
+
+# Data (local only)
+data/
+
 # Model outputs
 *.model
 *.vocab
-!data/tokenizer.model
