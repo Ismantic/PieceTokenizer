@@ -60,7 +60,6 @@ private:
 
     // Position list. Use set so that we can keep the order of occurrence.
     // See EncodePos/DecodePos.
-    //absl::btree_set<uint64_t> positions;
     std::set<uint64_t> positions;
 
     bool IsBigram() const { return left != nullptr && right != nullptr; }

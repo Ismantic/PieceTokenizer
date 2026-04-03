@@ -1,19 +1,9 @@
 #include "sentencepiece_counter.h"
 
-#include <iostream>
-#include <sstream>
-#include <iomanip>
-#include <string>
-#include <algorithm>
 #include <memory>
-
-#include <math.h>
 
 #include "common.h"
 #include "normalizer.h"
-#include "ustr.h"
-#include "sentence.h"
-#include "misc.h"
 
 namespace piece {
 
@@ -81,14 +71,13 @@ bool SentencePieceCounter::LoadSentences() {
 
     uint32_t UNK = counter_spec_.GetUnkUnicode();
 
-    auto iter_ = std::make_unique<MultiFileSentenceIterator>(
+    auto iter = std::make_unique<MultiFileSentenceIterator>(
         std::vector<std::string>(counter_spec_.input().begin(),
                                  counter_spec_.input().end()));
-    SentenceIterator* sentence_iterator_ = iter_.get();
 
     LOG(INFO) << "Loading sentences ...";
-    for (; !sentence_iterator_->done(); sentence_iterator_->Next()) {
-        std::string sentence = sentence_iterator_->value();
+    for (; !iter->done(); iter->Next()) {
+        const std::string& sentence = iter->value();
         if (sentence.empty()) {
             continue;
         }
@@ -96,7 +85,6 @@ bool SentencePieceCounter::LoadSentences() {
     }
 
     LOG(INFO) << "Normalizing sentences ...";
-    //const normalizer::Normalizer normalizer(normalizer_spec_);
     const Normalizer normalizer(normalizer_spec_);
     for (size_t i = 0; i < sentences_.size(); ++i) {
         auto *s = &sentences_[i].first;
@@ -120,7 +108,7 @@ bool SentencePieceCounter::LoadSentences() {
     for (const auto &w : misc::Sorted(chars_count)) {
         const float coverage = 1.0*accumulated_chars_count/all_chars_count;
         if (coverage >= counter_spec_.character_coverage()) {
-            LOG(INFO) << "Done: " << 100.0*coverage << "%s characters are covered.";
+            LOG(INFO) << "Done: " << 100.0*coverage << "% characters are covered.";
             break;
         }
         accumulated_chars_count += w.second;
