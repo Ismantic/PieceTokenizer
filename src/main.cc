@@ -36,7 +36,7 @@ void PrintUsage(const char* prog) {
               << "Decode reads token ids (space-separated) and outputs text.\n";
 }
 
-void RunTrain(const std::string& method,
+void RunCount(const std::string& method,
               const std::vector<std::string>& inputs,
               const std::string& model_prefix, int vocab_size,
               const std::string& normalizer_name, int cpu_count) {
@@ -96,9 +96,6 @@ void RunEncode(const std::string& model_file) {
     }
 
     const std::string& method = model.GetCounterSpec().method();
-    const auto& normalizer_spec = model.GetNormalizerSpec();
-    Normalizer normalizer(normalizer_spec);
-
     std::string line;
     if (method == "naive") {
         NaiveTokenizer tokenizer(model);
@@ -112,7 +109,7 @@ void RunEncode(const std::string& model_file) {
     } else if (method == "piece") {
         PieceTokenizer tokenizer(model);
         while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Encode(normalizer.Normalize(line));
+            auto tokens = tokenizer.Encode(line);
             for (const auto& t : tokens) {
                 std::cout << t.first << "\t" << t.second << "\n";
             }
@@ -149,9 +146,6 @@ void RunTokenize(const std::string& model_file) {
     }
 
     const std::string& method = model.GetCounterSpec().method();
-    const auto& normalizer_spec = model.GetNormalizerSpec();
-    Normalizer normalizer(normalizer_spec);
-
     std::string line;
     if (method == "naive") {
         NaiveTokenizer tokenizer(model);
@@ -166,7 +160,7 @@ void RunTokenize(const std::string& model_file) {
     } else if (method == "piece") {
         PieceTokenizer tokenizer(model);
         while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Tokenize(normalizer.Normalize(line));
+            auto tokens = tokenizer.Tokenize(line);
             for (size_t i = 0; i < tokens.size(); ++i) {
                 if (i > 0) std::cout << " ";
                 std::cout << Escape(tokens[i]);
@@ -300,7 +294,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        piece::RunTrain(method, inputs, model_prefix, vocab_size, normalizer, cpu_count);
+        piece::RunCount(method, inputs, model_prefix, vocab_size, normalizer, cpu_count);
 
     } else if (command == "tokenize" || command == "encode" || command == "decode") {
         std::string model_file;

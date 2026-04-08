@@ -34,12 +34,12 @@ private:
     }
   };
 
-  std::string NormalizeText(std::string_view text) const;
   std::vector<int> BuildInitialTokenIds(const std::string& text) const;
   void GreedyMerge(std::vector<int>& ids) const;
   EncodeResult TokenIdsToResult(const std::vector<int>& ids) const;
 
   const Model* model_;
+  Normalizer normalizer_;
   std::unordered_map<std::pair<int, int>, int, PairHash> merge_ranks_;
   StrToInt pieces_;
   int unk_id_;

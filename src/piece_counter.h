@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <queue>
 #include <string>
 #include <thread>
 #include <unordered_map>

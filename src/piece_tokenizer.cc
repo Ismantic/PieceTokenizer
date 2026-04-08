@@ -4,7 +4,8 @@
 
 namespace piece {
 
-PieceTokenizer::PieceTokenizer(const Model& model) : model_(&model) {
+PieceTokenizer::PieceTokenizer(const Model& model)
+    : model_(&model), normalizer_(model.GetNormalizerSpec()) {
   const auto& counter_spec = model_->GetCounterSpec();
   unk_id_ = counter_spec.unk_id();
 
@@ -38,7 +39,7 @@ PieceTokenizer::PieceTokenizer(const Model& model) : model_(&model) {
 PieceTokenizer::~PieceTokenizer() = default;
 
 PieceTokenizer::EncodeResult PieceTokenizer::Encode(std::string_view text) const {
-  std::string normalized = NormalizeText(text);
+  std::string normalized = normalizer_.Normalize(text);
   std::vector<int> ids = BuildInitialTokenIds(normalized);
   GreedyMerge(ids);
   return TokenIdsToResult(ids);
@@ -78,12 +79,7 @@ std::string PieceTokenizer::Decode(const std::vector<int>& ids) const {
     }
   }
 
-  if (model_->HasNormalizerSpec()) {
-    Normalizer normalizer(model_->GetNormalizerSpec());
-    return normalizer.ReplaceSpace(result);
-  }
-
-  return result;
+  return normalizer_.ReplaceSpace(result);
 }
 
 std::string PieceTokenizer::Decode(const EncodeResult& rs) const {
@@ -98,14 +94,6 @@ std::string PieceTokenizer::Decode(const EncodeResult& rs) const {
 int PieceTokenizer::PieceID(std::string_view piece) const {
   const auto it = pieces_.find(piece);
   return it != pieces_.end() ? it->second : unk_id_;
-}
-
-std::string PieceTokenizer::NormalizeText(std::string_view text) const {
-  if (model_->HasNormalizerSpec()) {
-    Normalizer normalizer(model_->GetNormalizerSpec());
-    return normalizer.Normalize(std::string(text));
-  }
-  return std::string(text);
 }
 
 std::vector<int> PieceTokenizer::BuildInitialTokenIds(

@@ -75,65 +75,6 @@ inline bool DecodePOD(std::string_view str, T *result) {
 }
 
 
-inline std::vector<std::string> StrSplit(const std::string& str, char delimiter) {
-    std::vector<std::string> result;
-    std::stringstream ss(str);
-    std::string item;
-    
-    while (std::getline(ss, item, delimiter)) {
-        result.push_back(item);
-    }
-    
-    return result;
-}
-
-inline std::vector<std::string> StrSplit(const std::string& str, const std::string& delimiter) {
-    std::vector<std::string> result;
-    size_t pos = 0;
-    size_t prev = 0;
-    
-    while ((pos = str.find(delimiter, prev)) != std::string::npos) {
-        result.push_back(str.substr(prev, pos - prev));
-        prev = pos + delimiter.length();
-    }
-    
-    result.push_back(str.substr(prev));
-    
-    return result;
-}
-
-inline std::vector<std::string> StrSplit(std::string_view str, char delimiter) {
-    std::vector<std::string> result;
-    size_t start = 0;
-    
-    for (size_t i = 0; i < str.length(); i++) {
-        if (str[i] == delimiter) {
-            result.emplace_back(str.substr(start, i - start));
-            start = i + 1;
-        }
-    }
-    
-    // 添加最后一个部分
-    result.emplace_back(str.substr(start));
-    
-    return result;
-}
-
-inline std::vector<std::string> StrSplit(std::string_view str, std::string_view delimiter) {
-    std::vector<std::string> result;
-    size_t pos = 0;
-    size_t prev = 0;
-    
-    while ((pos = str.find(delimiter, prev)) != std::string_view::npos) {
-        result.emplace_back(str.substr(prev, pos - prev));
-        prev = pos + delimiter.length();
-    }
-    
-    result.emplace_back(str.substr(prev));
-    
-    return result;
-}
-
 inline std::string ByteToPiece(unsigned char c) {
     std::stringstream ss;
     ss << "<0x" << std::setfill('0') << std::setw(2) << std::uppercase << std::hex << static_cast<int>(c) << ">";
