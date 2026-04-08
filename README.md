@@ -1,126 +1,92 @@
-# Tokenizer
+# PieceTokenizer
 
 BPE (Byte Pair Encoding) 分词器的 C++ 实现，支持多种训练算法和推理策略。
 
 ## 特性
 
-- **多种训练算法**
-  - NaiveCounter — 基础字节级 BPE
-  - PieceCounter — 基于索引链表的高效 BPE
-  - SentencePieceCounter — 基于 Symbol 缓存的高级 BPE，支持大词表
-  - BytePieceCounter — 字节 + 分片混合方案
-
-- **多种推理方式**
-  - NaiveTokenizer — 顺序合并规则
-  - PieceTokenizer — 基于合并规则映射的贪心扫描
-  - SentencePieceTokenizer — 带 Unicode 归一化的编解码
-  - BytePieceTokenizer — 基于 Trie 的最长匹配 + 字节回退
-
-- **Unicode 支持**
-  - NFKC 归一化（预编译 Trie）
-  - UTF-8 编解码、校验与文本切分工具
-  - 字节回退机制处理未知字符
-
-- **模型序列化**
-  - 文本格式模型文件，支持保存和加载
-  - 特殊 token 处理（`<unk>`, `<s>`, `</s>`, `<pad>`）
+- 四种训练/推理方法：Naive、Piece、SentencePiece、BytePiece
+- NFKC Unicode 归一化，UTF-8 字节回退
+- 文本格式模型文件，可读可编辑
+- Python 绑定（pybind11）
+- 内置中英文维基百科语料下载与预处理流程
 
 ## 构建
 
+需要 CMake 3.14+，C++17。
+
 ```bash
-# 仅构建 C++ CLI
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
+```
 
-# 同时构建 Python 模块
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON=ON
-cmake --build build
+Python 模块（需要 pybind11）：
 
-# 或通过 pip 安装 Python 模块
+```bash
 pip install .
 ```
 
-## CLI 使用
+## 快速开始
 
-### 训练
-
-```bash
-piece-tokenizer count --method sentencepiece --input corpus.txt --vocab-size 8000
-```
-
-支持的训练方法：`naive`、`piece`、`sentencepiece`、`bytepiece`（默认）
-
-可选参数：
-- `--model <prefix>` — 模型输出前缀（默认：tokenizer）
-- `--normalize <name>` — 归一化：identity | NMT_NFKC（默认：identity）
-
-### 分词
+### 准备数据
 
 ```bash
-echo "你好世界" | piece-tokenizer tokenize --model tokenizer.model
+cd data
+make          # 下载中英文维基百科，处理并分句
 ```
 
-输出空格分隔的 piece 列表，每行对应一行输入。
+默认使用 hf-mirror.com 镜像加速下载，直连 HuggingFace 可用 `make download HF_ENDPOINT=`。
 
-### 编码
+产出文件：`cn_sentences.txt`（中文）、`en_sentences.txt`（英文）。
+
+### 训练模型
 
 ```bash
-echo "你好世界" | piece-tokenizer encode --model tokenizer.model
+cd scripts
+make bytepiece                    # 训练单个方法
+make                              # 训练所有方法
+make bytepiece VOCAB_SIZE=16000   # 自定义词表大小
 ```
 
-输出每行一个 token（piece + id），模型文件中记录了训练方法，自动选择对应的 tokenizer。
+模型输出到 `scripts/output/{method}.model`。
 
-### 解码
+### 分词 / 编码 / 解码
 
 ```bash
-echo "231 192 163 897 411 591" | piece-tokenizer decode --model tokenizer.model
+echo "你好世界" | ./build/piece-tokenizer tokenize --model output/bytepiece.model
+echo "你好世界" | ./build/piece-tokenizer encode --model output/bytepiece.model
+echo "231 192 163 897" | ./build/piece-tokenizer decode --model output/bytepiece.model
 ```
 
-## Python 接口
+### Python 接口
 
 ```python
 import piece_tokenizer
 
 tok = piece_tokenizer.Tokenizer()
-tok.load("tokenizer.model")
+tok.load("output/bytepiece.model")
 
-tok.encode("你好世界")          # → [('你', 897), ('好', 411), ...]
-tok.encode_as_ids("你好世界")   # → [897, 411, ...]
-tok.encode_as_pieces("你好世界") # → ['你', '好', ...]
-tok.decode([897, 411, 591])     # → '你好世界'
+tok.encode("你好世界")            # → [('你', 897), ('好', 411), ...]
+tok.encode_as_ids("你好世界")     # → [897, 411, ...]
+tok.encode_as_pieces("你好世界")  # → ['你', '好', ...]
+tok.decode([897, 411, 591])       # → '你好世界'
 
-tok.piece_to_id("好")           # → 897
-tok.id_to_piece(897)            # → '好'
-tok.vocab_size()                # → 1259
-tok.method                      # → 'sentencepiece'
+tok.vocab_size()                  # → 8259
+tok.method                        # → 'bytepiece'
 ```
 
-## 项目结构
+## 训练方法
 
-```
-src/
-  main.cc               - CLI 程序（count/tokenize/encode/decode）
-  tokenizer_test.cc     - tokenizer 单元测试入口
-  test.h / test.cc      - 轻量测试框架
-  ustr_test.cc          - ustr 相关测试
-  piece_spec.h          - 核心数据结构（Model, CounterSpec, NormalizerSpec）
-  naive_counter.h/cc    - 基础 BPE 训练
-  naive_tokenizer.h/cc  - 基础 BPE 推理
-  piece_counter.h/cc    - 链表优化的 BPE 训练
-  piece_tokenizer.h/cc  - 链表优化的 BPE 推理
-  sentencepiece_counter.h/cc - Symbol 缓存 BPE 训练
-  sentencepiece_tokenizer.h/cc - 高级编解码推理
-  bytepiece_counter.h/cc - BytePiece 训练
-  bytepiece_tokenizer.h/cc - BytePiece 推理（Trie 最长匹配）
-  normalizer.h/cc       - NFKC Unicode 归一化
-  ustr.h/cc             - UTF-8/Unicode 基础工具与文本切分
-  sentence.h/cc         - 文件 I/O
-  darts.h / trie.h      - Double-Array Trie
-  common.h              - 日志
-  misc.h                - 工具函数
-  normalization_data.h  - 归一化规则数据
-python/
-  piece_tokenizer.cc     - pybind11 Python 绑定
+| 方法 | 训练 | 推理 | 说明 |
+|------|------|------|------|
+| `naive` | NaiveCounter | NaiveTokenizer | 基础字节级 BPE |
+| `piece` | PieceCounter | PieceTokenizer | 索引链表优化 BPE |
+| `sentencepiece` | SentencePieceCounter | SentencePieceTokenizer | Symbol 缓存 BPE + Unicode 归一化 |
+| `bytepiece` | BytePieceCounter | BytePieceTokenizer | Trie 最长匹配 + 字节回退 |
+
+## 测试
+
+```bash
+./build/piece_tokenizer_test
 ```
 
 ## License
