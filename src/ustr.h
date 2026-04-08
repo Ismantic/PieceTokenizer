@@ -134,13 +134,6 @@ inline std::vector<std::string> StrSplit(std::string_view str, std::string_view 
     return result;
 }
 
-inline bool IsByte(std::string_view str) {
-    if (str.length() != 1) {
-        return false;
-    }
-    return true;
-}
-
 inline std::string ByteToPiece(unsigned char c) {
     std::stringstream ss;
     ss << "<0x" << std::setfill('0') << std::setw(2) << std::uppercase << std::hex << static_cast<int>(c) << ">";
@@ -173,7 +166,5 @@ inline bool IsSeparatorToken(std::string_view text) {
 }
 
 std::vector<std::string_view> SplitText(std::string_view text, const std::string_view space);
-
-std::vector<std::string_view> SplitWords(std::string_view text);
 
 } // namespace ustr

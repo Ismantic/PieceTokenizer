@@ -47,8 +47,6 @@ bool PieceCounter::Count() {
     ++cnt;
   }
 
-  const int num_threads = counter_spec_.cpu_count();
-
   while (cnt < num_merges && stats) {
     const auto top = stats.Top();
     const int n = stats.GetCount(top);
@@ -74,42 +72,9 @@ bool PieceCounter::Count() {
     std::sort(indices.begin(), indices.end());
     indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
 
-    if (num_threads <= 1 || indices.size() < 256) {
-      for (size_t j : indices)
-        MergeSentence(top, new_id, token_lists_[j],
-                      sentences_[j].second, stats, j, pair_index);
-    } else {
-      const int nt = std::min(num_threads,
-                              static_cast<int>(indices.size()));
-      std::vector<DeltaMap> deltas(nt);
-      std::vector<std::vector<IndexEntry>> idx_adds(nt);
-      std::vector<std::thread> threads;
-      const size_t chunk = (indices.size() + nt - 1) / nt;
-
-      for (int t = 0; t < nt; ++t) {
-        const size_t start = t * chunk;
-        const size_t end = std::min(start + chunk, indices.size());
-        if (start >= end) break;
-        threads.emplace_back([&, t, start, end]() {
-          for (size_t k = start; k < end; ++k) {
-            const size_t j = indices[k];
-            MergeSentenceAsync(top, new_id, token_lists_[j],
-                               sentences_[j].second,
-                               deltas[t], j, idx_adds[t]);
-          }
-        });
-      }
-      for (auto& t : threads) t.join();
-
-      for (const auto& d : deltas)
-        for (const auto& [p, c] : d) {
-          if (c > 0) stats.Insert(p, c);
-          else if (c < 0) stats.Remove(p, -c);
-        }
-      for (const auto& adds : idx_adds)
-        for (const auto& [p, sid] : adds)
-          pair_index[p].push_back(sid);
-    }
+    for (size_t j : indices)
+      MergeSentence(top, new_id, token_lists_[j],
+                    sentences_[j].second, stats, j, pair_index);
 
     if (cnt % 10 == 0)
       LOG(INFO) << "Merge " << cnt + 1 << "/" << num_merges
@@ -262,15 +227,52 @@ void PieceCounter::FreeTokenList(Token* head) {
 void PieceCounter::InitPairsStatsAndIndex(
     Multiset<std::pair<int, int>>& stats,
     PairIndex& pair_index) {
-  for (size_t j = 0; j < sentences_.size(); ++j) {
-    const auto& text = sentences_[j].first;
-    const int freq = sentences_[j].second;
-    for (size_t i = 0; i + 1 < text.size(); ++i) {
-      std::pair<int, int> pair = {
-          static_cast<int>(static_cast<uint8_t>(text[i])),
-          static_cast<int>(static_cast<uint8_t>(text[i + 1]))};
-      stats.Insert(pair, freq);
-      pair_index[pair].push_back(j);
+  const int num_threads = counter_spec_.cpu_count();
+  if (num_threads > 1 && sentences_.size() > 256) {
+    const int nt = std::min(num_threads,
+                            static_cast<int>(sentences_.size()));
+    std::vector<DeltaMap> thread_counts(nt);
+    std::vector<std::vector<IndexEntry>> thread_indices(nt);
+    std::vector<std::thread> threads;
+    const size_t chunk = (sentences_.size() + nt - 1) / nt;
+
+    for (int t = 0; t < nt; ++t) {
+      const size_t start = t * chunk;
+      const size_t end = std::min(start + chunk, sentences_.size());
+      if (start >= end) break;
+      threads.emplace_back([&, t, start, end]() {
+        for (size_t j = start; j < end; ++j) {
+          const auto& text = sentences_[j].first;
+          const int64_t freq = sentences_[j].second;
+          for (size_t i = 0; i + 1 < text.size(); ++i) {
+            std::pair<int, int> pair = {
+                static_cast<int>(static_cast<uint8_t>(text[i])),
+                static_cast<int>(static_cast<uint8_t>(text[i + 1]))};
+            thread_counts[t][pair] += freq;
+            thread_indices[t].push_back({pair, j});
+          }
+        }
+      });
+    }
+    for (auto& t : threads) t.join();
+
+    for (const auto& counts : thread_counts)
+      for (const auto& [pair, count] : counts)
+        stats.Insert(pair, count);
+    for (const auto& indices : thread_indices)
+      for (const auto& [pair, sid] : indices)
+        pair_index[pair].push_back(sid);
+  } else {
+    for (size_t j = 0; j < sentences_.size(); ++j) {
+      const auto& text = sentences_[j].first;
+      const int freq = sentences_[j].second;
+      for (size_t i = 0; i + 1 < text.size(); ++i) {
+        std::pair<int, int> pair = {
+            static_cast<int>(static_cast<uint8_t>(text[i])),
+            static_cast<int>(static_cast<uint8_t>(text[i + 1]))};
+        stats.Insert(pair, freq);
+        pair_index[pair].push_back(j);
+      }
     }
   }
 }
@@ -327,19 +329,5 @@ void PieceCounter::MergeSentence(
     });
 }
 
-void PieceCounter::MergeSentenceAsync(
-    const std::pair<int, int>& pair, int new_id,
-    Token* head, int64_t freq,
-    DeltaMap& delta,
-    size_t sentence_idx, std::vector<IndexEntry>& idx_adds) {
-  MergeImpl(pair, new_id, head, freq,
-    [&](const std::pair<int, int>& p, int64_t f) {
-      delta[p] -= f;
-    },
-    [&](const std::pair<int, int>& p, int64_t f) {
-      delta[p] += f;
-      idx_adds.push_back({p, sentence_idx});
-    });
-}
 
 }  // namespace piece

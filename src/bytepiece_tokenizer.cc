@@ -36,8 +36,7 @@ BytePieceTokenizer::~BytePieceTokenizer() = default;
 
 BytePieceTokenizer::EncodeResult BytePieceTokenizer::Encode(
     std::string_view text) const {
-    const std::string text_str = normalizer_.Normalize(text);
-    const std::vector<std::string> tokens = Tokenize(text_str);
+    const std::vector<std::string> tokens = Tokenize(text);
 
     EncodeResult output;
     for (const auto& token : tokens) {
@@ -98,8 +97,11 @@ std::string BytePieceTokenizer::Decode(const EncodeResult& encoded) const {
 
 std::vector<std::string> BytePieceTokenizer::Tokenize(
     std::string_view text) const {
+    const std::string normalized = model_ ? normalizer_.Normalize(text)
+                                          : std::string(text);
+    const std::string_view input = normalized;
     const float_t inf = std::numeric_limits<float_t>::infinity();
-    const int num = text.length();
+    const int num = input.length();
     std::vector<float_t> scores(num + 1, -inf);
     std::vector<int> routes(num + 1);
     scores[0] = 0;
@@ -107,7 +109,7 @@ std::vector<std::string> BytePieceTokenizer::Tokenize(
         routes[i] = i;
     }
 
-    const auto matches = GetMatches(text);
+    const auto matches = GetMatches(input);
     for (const auto& m : matches) {
         const int start = m.e - m.n + 1;
         const int end = m.e + 1;
@@ -127,7 +129,7 @@ std::vector<std::string> BytePieceTokenizer::Tokenize(
     int end = num;
     while (end > 0) {
         const int start = routes[end];
-        tokens.emplace_back(text.substr(start, end - start));
+        tokens.emplace_back(input.substr(start, end - start));
         end = start;
     }
     std::reverse(tokens.begin(), tokens.end());

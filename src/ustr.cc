@@ -178,7 +178,12 @@ std::vector<std::string_view> SplitText(std::string_view text, const std::string
         std::string_view current_char(begin, mblen);
         
         if (current_char == space) {
-            result.emplace_back(begin, mblen);
+            if (result.back().size() == 0) {
+                result.back() = std::string_view(begin, mblen);
+            } else {
+                result.emplace_back(begin, mblen);
+            }
+            result.emplace_back(begin + mblen, 0);
             begin += mblen;
             continue;
         }
@@ -209,50 +214,6 @@ std::vector<std::string_view> SplitText(std::string_view text, const std::string
         result.end()
     );
     
-    return result;
-}
-
-std::vector<std::string_view> SplitWords(std::string_view text) {
-    const char* begin = text.data();
-    const char* end = text.data() + text.size();
-    const char* word_start = nullptr;
-    std::vector<std::string_view> result;
-
-    auto flush = [&]() {
-        if (word_start && begin > word_start) {
-            result.emplace_back(word_start, begin - word_start);
-        }
-        word_start = nullptr;
-    };
-
-    while (begin < end) {
-        unsigned char c = static_cast<unsigned char>(*begin);
-        if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
-            flush();
-            ++begin;
-            continue;
-        }
-
-        int mblen = static_cast<int>(UTF8CharLen(c));
-        if (begin + mblen > end) {
-            mblen = static_cast<int>(end - begin);
-        }
-
-        std::string_view current(begin, mblen);
-        if (IsSeparatorToken(current)) {
-            flush();
-            result.push_back(current);
-            begin += mblen;
-            continue;
-        }
-
-        if (!word_start) {
-            word_start = begin;
-        }
-        begin += mblen;
-    }
-
-    flush();
     return result;
 }
 

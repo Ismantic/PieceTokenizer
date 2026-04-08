@@ -1,7 +1,8 @@
+#include <cstring>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
-#include <cstring>
 
 #include "piece_spec.h"
 #include "naive_counter.h"
@@ -158,7 +159,7 @@ void RunTokenize(const std::string& model_file) {
             auto tokens = tokenizer.Tokenize(line);
             for (size_t i = 0; i < tokens.size(); ++i) {
                 if (i > 0) std::cout << " ";
-                std::cout << tokens[i];
+                std::cout << Escape(tokens[i]);
             }
             std::cout << "\n";
         }
@@ -168,7 +169,7 @@ void RunTokenize(const std::string& model_file) {
             auto tokens = tokenizer.Tokenize(normalizer.Normalize(line));
             for (size_t i = 0; i < tokens.size(); ++i) {
                 if (i > 0) std::cout << " ";
-                std::cout << tokens[i];
+                std::cout << Escape(tokens[i]);
             }
             std::cout << "\n";
         }
@@ -178,7 +179,7 @@ void RunTokenize(const std::string& model_file) {
             auto tokens = tokenizer.Tokenize(line);
             for (size_t i = 0; i < tokens.size(); ++i) {
                 if (i > 0) std::cout << " ";
-                std::cout << tokens[i];
+                std::cout << Escape(tokens[i]);
             }
             std::cout << "\n";
         }
@@ -188,7 +189,7 @@ void RunTokenize(const std::string& model_file) {
             auto tokens = tokenizer.Tokenize(line);
             for (size_t i = 0; i < tokens.size(); ++i) {
                 if (i > 0) std::cout << " ";
-                std::cout << tokens[i];
+                std::cout << Escape(tokens[i]);
             }
             std::cout << "\n";
         }
@@ -303,16 +304,30 @@ int main(int argc, char* argv[]) {
 
     } else if (command == "tokenize" || command == "encode" || command == "decode") {
         std::string model_file;
+        std::string input_file;
 
         for (int i = 2; i < argc; i++) {
             if (std::strcmp(argv[i], "--model") == 0 && i + 1 < argc) {
                 model_file = argv[++i];
+            } else if (std::strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
+                input_file = argv[++i];
             }
         }
 
         if (model_file.empty()) {
             std::cerr << "Error: --model is required\n";
             return 1;
+        }
+
+        // Redirect stdin from file if --input is specified
+        std::ifstream file_in;
+        if (!input_file.empty()) {
+            file_in.open(input_file);
+            if (!file_in) {
+                std::cerr << "Error: cannot open input file: " << input_file << "\n";
+                return 1;
+            }
+            std::cin.rdbuf(file_in.rdbuf());
         }
 
         if (command == "tokenize") {
