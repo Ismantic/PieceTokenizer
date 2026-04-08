@@ -65,12 +65,10 @@ bool PieceCounter::Count() {
     }
 
     // Move out indices and erase — this pair is consumed.
+    // Indices may contain duplicates; MergeImpl naturally skips
+    // sentences where the pair no longer exists.
     std::vector<size_t> indices = std::move(it->second);
     pair_index.erase(it);
-
-    // Deduplicate (index may accumulate duplicates).
-    std::sort(indices.begin(), indices.end());
-    indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
 
     for (size_t j : indices)
       MergeSentence(top, new_id, token_lists_[j],
