@@ -53,78 +53,110 @@ bool SentencePieceCounter::InitMetaPieces() {
     return true;
 }
 
-void SentencePieceCounter::SplitSentencesByWhitespace() {
-    LOG(INFO) << "Tokenizing input sentences with whitespace: "
-              << sentences_.size();
-    const std::string_view space = normalizer_spec_.GetSpace();
-    std::unordered_map<std::string, int64_t> tokens;
-    for (const auto& s : sentences_) {
-        for (const auto &w :
-            ustr::SplitText(s.first, space)) {
-            tokens[std::string(w)] += s.second;
-        }
-    }
-    sentences_ = misc::Sorted(tokens);
-    LOG(INFO) << "Done! " << sentences_.size();
-}
-
 bool SentencePieceCounter::LoadSentences() {
+    const uint32_t UNK = counter_spec_.GetUnkUnicode();
+    const Normalizer normalizer(normalizer_spec_);
+    const std::string_view space = normalizer_spec_.GetSpace();
 
-    uint32_t UNK = counter_spec_.GetUnkUnicode();
+    // Batch-read + parallel normalize/split + merge into global map.
+    LOG(INFO) << "Loading and tokenizing sentences ...";
+    const int num_threads = counter_spec_.cpu_count();
+    constexpr size_t kBatchSize = 1000000;
+    std::unordered_map<std::string, int64_t> tokens;
+    std::vector<std::string> batch;
+    batch.reserve(kBatchSize);
+    int64_t line_count = 0;
 
     auto iter = std::make_unique<MultiFileSentenceIterator>(
         std::vector<std::string>(counter_spec_.input().begin(),
                                  counter_spec_.input().end()));
 
-    LOG(INFO) << "Loading sentences ...";
+    auto process_batch = [&]() {
+        if (batch.empty()) return;
+        if (num_threads <= 1 || batch.size() < 256) {
+            for (const auto& line : batch) {
+                std::string normalized = normalizer.Normalize(line);
+                for (const auto& w : ustr::SplitText(normalized, space))
+                    tokens[std::string(w)] += 1;
+            }
+        } else {
+            std::vector<std::unordered_map<std::string, int64_t>>
+                local_maps(num_threads);
+            std::vector<std::thread> threads;
+            for (int t = 0; t < num_threads; ++t) {
+                threads.emplace_back([&, t]() {
+                    for (size_t i = t; i < batch.size(); i += num_threads) {
+                        std::string normalized =
+                            normalizer.Normalize(batch[i]);
+                        for (const auto& w :
+                             ustr::SplitText(normalized, space))
+                            local_maps[t][std::string(w)] += 1;
+                    }
+                });
+            }
+            for (auto& t : threads) t.join();
+            for (const auto& lm : local_maps)
+                for (const auto& [k, v] : lm) tokens[k] += v;
+        }
+        batch.clear();
+    };
+
+    const int32_t max_s = counter_spec_.max_sentences();
     for (; !iter->done(); iter->Next()) {
+        if (max_s > 0 && line_count >= max_s) break;
         const std::string& sentence = iter->value();
-        if (sentence.empty()) {
-            continue;
-        }
-        sentences_.emplace_back(std::make_pair(sentence, 1));
-    }
-
-    // Parallel normalization
-    LOG(INFO) << "Normalizing sentences ...";
-    const Normalizer normalizer(normalizer_spec_);
-    const int num_threads = counter_spec_.cpu_count();
-    if (num_threads > 1 && sentences_.size() > 256) {
-        std::vector<std::thread> threads;
-        for (int n = 0; n < num_threads; ++n) {
-            threads.emplace_back([&, n]() {
-                for (size_t i = n; i < sentences_.size();
-                     i += num_threads) {
-                    sentences_[i].first =
-                        normalizer.Normalize(sentences_[i].first);
-                }
-            });
-        }
-        for (auto& t : threads) t.join();
-    } else {
-        for (size_t i = 0; i < sentences_.size(); ++i) {
-            sentences_[i].first = normalizer.Normalize(sentences_[i].first);
+        if (sentence.empty()) continue;
+        batch.push_back(sentence);
+        ++line_count;
+        if (batch.size() >= kBatchSize) {
+            process_batch();
+            LOG(INFO) << "  " << line_count << " lines, "
+                      << tokens.size() << " unique tokens";
         }
     }
+    process_batch();
 
-    // Count
+    sentences_ = misc::Sorted(tokens);
+    { decltype(tokens) tmp; tokens.swap(tmp); }  // free map memory
+
+    // Filter out tokens below min_count.
+    const int32_t min_count = counter_spec_.min_count();
+    if (min_count > 1) {
+        size_t old_size = sentences_.size();
+        sentences_.erase(
+            std::remove_if(sentences_.begin(), sentences_.end(),
+                           [min_count](const Sentence& s) {
+                             return s.second < min_count;
+                           }),
+            sentences_.end());
+        sentences_.shrink_to_fit();
+        if (sentences_.size() < old_size)
+            LOG(INFO) << "Filtered by min_count=" << min_count << ": "
+                      << old_size << " -> " << sentences_.size();
+    }
+
+    LOG(INFO) << "Done! " << line_count << " lines -> "
+              << sentences_.size() << " unique tokens";
+
+    // Count character frequencies (weighted by token frequency).
     int64_t all_chars_count = 0;
     std::unordered_map<uint32_t, int64_t> chars_count;
-    for (const auto &w : sentences_) {
-        for (const uint32_t c : ustr::UTF8ToUnicodeText(w.first)) {
+    for (const auto& [text, freq] : sentences_) {
+        for (const uint32_t c : ustr::UTF8ToUnicodeText(text)) {
             if (!ustr::IsValidCodepoint(c)) continue;
-            chars_count[c] += w.second;
-            all_chars_count += w.second;
+            chars_count[c] += freq;
+            all_chars_count += freq;
         }
     }
     LOG(INFO) << "all chars count=" << all_chars_count;
 
-    // Determines required_chars which must be included in the vocabulary.
+    // Determine required_chars by character coverage.
     int64_t accumulated_chars_count = 0;
-    for (const auto &w : misc::Sorted(chars_count)) {
-        const float coverage = 1.0*accumulated_chars_count/all_chars_count;
+    for (const auto& w : misc::Sorted(chars_count)) {
+        const float coverage = 1.0 * accumulated_chars_count / all_chars_count;
         if (coverage >= counter_spec_.character_coverage()) {
-            LOG(INFO) << "Done: " << 100.0*coverage << "% characters are covered.";
+            LOG(INFO) << "Done: " << 100.0 * coverage
+                      << "% characters are covered.";
             break;
         }
         accumulated_chars_count += w.second;
@@ -132,26 +164,35 @@ bool SentencePieceCounter::LoadSentences() {
     }
     LOG(INFO) << "Alphabase size=" << required_chars_.size();
     LOG(INFO) << "Final character coverage="
-              << 1.0*accumulated_chars_count/all_chars_count;
-    if (misc::ContainsKey(required_chars_, UNK)) {
+              << 1.0 * accumulated_chars_count / all_chars_count;
+    if (misc::ContainsKey(required_chars_, UNK))
         return false;
+
+    // Replace rare characters with UNK.
+    for (auto& [text, freq] : sentences_) {
+        ustr::UnicodeText uw2;
+        for (const uint32_t c : ustr::UTF8ToUnicodeText(text)) {
+            uw2.push_back(misc::ContainsKey(required_chars_, c) ? c : UNK);
+        }
+        text = ustr::UnicodeTextToUTF8(uw2);
     }
 
-    // Replaces rare characters (characters not included in required_chars_)
-    for (auto &w : sentences_) {
-        ustr::UnicodeText uw2;
-        for (const uint32_t c : ustr::UTF8ToUnicodeText(w.first)) {
-            if (misc::ContainsKey(required_chars_, c)) {
-                uw2.push_back(c);
-            } else {
-                uw2.push_back(UNK);
-            }
-        }
-        w.first = ustr::UnicodeTextToUTF8(uw2);
+    // EncodePos uses 16 bits for symbol index; drop tokens exceeding this.
+    constexpr size_t kMaxTokenBytes = 65535;
+    {
+        size_t old_size = sentences_.size();
+        sentences_.erase(
+            std::remove_if(sentences_.begin(), sentences_.end(),
+                           [](const Sentence& s) {
+                             return s.first.size() > kMaxTokenBytes;
+                           }),
+            sentences_.end());
+        if (sentences_.size() < old_size)
+            LOG(INFO) << "Dropped " << (old_size - sentences_.size())
+                      << " tokens exceeding " << kMaxTokenBytes << " bytes";
     }
 
     LOG(INFO) << "Done! preprocessed " << sentences_.size() << " sentences.";
-
     return true;
 }
 
@@ -202,7 +243,7 @@ void SentencePieceCounter::AddNewPair(int sid, int left, int right) {
   auto *symbol = GetPairSymbol(symbols_[sid][left], symbols_[sid][right]);
   if (symbol != nullptr) {
     active_symbols_.insert(symbol);
-    symbol->positions.insert(EncodePos(sid, left, right));
+    symbol->positions.push_back(EncodePos(sid, left, right));
   }
 }
 
@@ -210,16 +251,16 @@ void SentencePieceCounter::ComputeFreq(Symbol *symbol) const {
     if (symbol->freq > 0) {
         return;
     }
-    for (auto it = symbol->positions.begin(); it != symbol->positions.end();) {
-        const Position pos = DecodePos(*it);
-        if (symbol->left != symbols_[pos.sid][pos.left] ||
-            symbol->right != symbols_[pos.sid][pos.right]) {
-                it = symbol->positions.erase(it);
-        } else {
-            symbol->freq += sentences_[pos.sid].second;
-            ++it;
+    size_t write = 0;
+    for (size_t read = 0; read < symbol->positions.size(); ++read) {
+        const Position pos = DecodePos(symbol->positions[read]);
+        if (symbol->left == symbols_[pos.sid][pos.left] &&
+            symbol->right == symbols_[pos.sid][pos.right]) {
+            symbol->freq += freqs_[pos.sid];
+            symbol->positions[write++] = symbol->positions[read];
         }
     }
+    symbol->positions.resize(write);
 }
 
 void SentencePieceCounter::UpdateActiveSymbols() {
@@ -301,8 +342,6 @@ bool SentencePieceCounter::Count() {
 
     LoadSentences();
 
-    SplitSentencesByWhitespace();
-
     const int num_threads = counter_spec_.cpu_count();
 
     // Initializes symbols_. symbols_[s][i] stores an unary symbol.
@@ -312,6 +351,13 @@ bool SentencePieceCounter::Count() {
             symbols_[i].push_back(GetCharSymbol(c));
         }
     }
+
+    // Extract frequencies and free sentence strings (no longer needed).
+    freqs_.resize(sentences_.size());
+    for (size_t i = 0; i < sentences_.size(); ++i)
+        freqs_[i] = sentences_[i].second;
+    { Sentences tmp; sentences_.swap(tmp); }
+    LOG(INFO) << "Freed sentence strings, kept " << freqs_.size() << " frequencies";
 
     // Makes all bigram symbols.
     for (size_t s = 0; s < symbols_.size(); ++s) {

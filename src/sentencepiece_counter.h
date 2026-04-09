@@ -35,7 +35,6 @@ public:
 
 private:
   bool LoadSentences();
-  void SplitSentencesByWhitespace();
 
   std::map<int, std::pair<std::string, Model::Piece::Type>> meta_pieces_;
   std::unordered_map<uint32_t, uint64_t> required_chars_;
@@ -58,9 +57,8 @@ private:
     uint64_t fp;                     // fingerprint of this symbol.
     uint64_t freq;                   // frequency of this symbol.
 
-    // Position list. Use set so that we can keep the order of occurrence.
-    // See EncodePos/DecodePos.
-    std::set<uint64_t> positions;
+    // Position list. See EncodePos/DecodePos.
+    std::vector<uint64_t> positions;
 
     bool IsBigram() const { return left != nullptr && right != nullptr; }
     std::string ToString() const;
@@ -104,6 +102,7 @@ private:
   std::set<Symbol*> active_symbols_;
   std::vector<Symbol*> allocated_;
   std::vector<std::vector<Symbol*>> symbols_;
+  std::vector<int64_t> freqs_;  // sentence frequencies (extracted from sentences_)
 
 };
 

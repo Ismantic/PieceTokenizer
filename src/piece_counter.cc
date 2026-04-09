@@ -22,12 +22,18 @@ bool PieceCounter::Count() {
     LOG(ERROR) << "Failed to load sentences.";
     return false;
   }
-  SplitSentencesByWhitespace();
 
   // Build per-sentence token linked lists.
   token_lists_.reserve(sentences_.size());
   for (const auto& s : sentences_)
     token_lists_.push_back(BuildTokenList(s.first));
+
+  // Extract frequencies and free sentence strings.
+  freqs_.resize(sentences_.size());
+  for (size_t i = 0; i < sentences_.size(); ++i)
+    freqs_[i] = sentences_[i].second;
+  { Sentences tmp; sentences_.swap(tmp); }
+  LOG(INFO) << "Freed sentence strings, kept " << freqs_.size() << " frequencies";
 
   // Build initial pair statistics and global pair→sentence index.
   Multiset<std::pair<int, int>> stats;
@@ -72,7 +78,7 @@ bool PieceCounter::Count() {
 
     for (size_t j : indices)
       MergeSentence(top, new_id, token_lists_[j],
-                    sentences_[j].second, stats, j, pair_index);
+                    freqs_[j], stats, j, pair_index);
 
     if (cnt % 10 == 0)
       LOG(INFO) << "Merge " << cnt + 1 << "/" << num_merges
@@ -150,46 +156,86 @@ bool PieceCounter::InitMetaPieces() {
 }
 
 bool PieceCounter::LoadSentences() {
-  LOG(INFO) << "Loading sentences ...";
+  const Normalizer normalizer(normalizer_spec_);
+  const std::string_view space = normalizer_spec_.GetSpace();
+  const int num_threads = counter_spec_.cpu_count();
+  constexpr size_t kBatchSize = 1000000;
+
+  LOG(INFO) << "Loading and tokenizing sentences ...";
+  std::unordered_map<std::string, int64_t> tokens;
+  std::vector<std::string> batch;
+  batch.reserve(kBatchSize);
+  int64_t line_count = 0;
+
   auto iter = std::make_unique<MultiFileSentenceIterator>(
       std::vector<std::string>(counter_spec_.input().begin(),
                                counter_spec_.input().end()));
-  for (; !iter->done(); iter->Next()) {
-    if (!iter->value().empty())
-      sentences_.emplace_back(iter->value(), 1);
-  }
 
-  LOG(INFO) << "Normalizing sentences ...";
-  const Normalizer normalizer(normalizer_spec_);
-  const int num_threads = counter_spec_.cpu_count();
-  if (num_threads > 1 && sentences_.size() > 256) {
-    std::vector<std::thread> threads;
-    for (int n = 0; n < num_threads; ++n) {
-      threads.emplace_back([&, n]() {
-        for (size_t i = n; i < sentences_.size(); i += num_threads)
-          sentences_[i].first = normalizer.Normalize(sentences_[i].first);
-      });
+  auto process_batch = [&]() {
+    if (batch.empty()) return;
+    if (num_threads <= 1 || batch.size() < 256) {
+      for (const auto& line : batch) {
+        std::string normalized = normalizer.Normalize(line);
+        for (const auto& w : ustr::SplitText(normalized, space))
+          tokens[std::string(w)] += 1;
+      }
+    } else {
+      std::vector<std::unordered_map<std::string, int64_t>>
+          local_maps(num_threads);
+      std::vector<std::thread> threads;
+      for (int t = 0; t < num_threads; ++t) {
+        threads.emplace_back([&, t]() {
+          for (size_t i = t; i < batch.size(); i += num_threads) {
+            std::string normalized = normalizer.Normalize(batch[i]);
+            for (const auto& w : ustr::SplitText(normalized, space))
+              local_maps[t][std::string(w)] += 1;
+          }
+        });
+      }
+      for (auto& t : threads) t.join();
+      for (const auto& lm : local_maps)
+        for (const auto& [k, v] : lm) tokens[k] += v;
     }
-    for (auto& t : threads) t.join();
-  } else {
-    for (auto& [text, freq] : sentences_)
-      text = normalizer.Normalize(text);
+    batch.clear();
+  };
+
+  const int32_t max_s = counter_spec_.max_sentences();
+  for (; !iter->done(); iter->Next()) {
+    if (max_s > 0 && line_count >= max_s) break;
+    const std::string& sentence = iter->value();
+    if (sentence.empty()) continue;
+    batch.push_back(sentence);
+    ++line_count;
+    if (batch.size() >= kBatchSize) {
+      process_batch();
+      LOG(INFO) << "  " << line_count << " lines, "
+                << tokens.size() << " unique tokens";
+    }
+  }
+  process_batch();
+
+  sentences_ = misc::Sorted(tokens);
+  { decltype(tokens) tmp; tokens.swap(tmp); }  // free map memory
+
+  // Filter out tokens below min_count.
+  const int32_t min_count = counter_spec_.min_count();
+  if (min_count > 1) {
+    size_t old_size = sentences_.size();
+    sentences_.erase(
+        std::remove_if(sentences_.begin(), sentences_.end(),
+                       [min_count](const Sentence& s) {
+                         return s.second < min_count;
+                       }),
+        sentences_.end());
+    sentences_.shrink_to_fit();
+    if (sentences_.size() < old_size)
+      LOG(INFO) << "Filtered by min_count=" << min_count << ": "
+                << old_size << " -> " << sentences_.size();
   }
 
-  LOG(INFO) << "Done! preprocessed " << sentences_.size() << " sentences.";
+  LOG(INFO) << "Done! " << line_count << " lines -> "
+            << sentences_.size() << " unique tokens";
   return true;
-}
-
-void PieceCounter::SplitSentencesByWhitespace() {
-  LOG(INFO) << "Tokenizing input sentences with whitespace: "
-            << sentences_.size();
-  const std::string_view space = normalizer_spec_.GetSpace();
-  std::unordered_map<std::string, int64_t> tokens;
-  for (const auto& [text, freq] : sentences_)
-    for (const auto& w : ustr::SplitText(text, space))
-      tokens[std::string(w)] += freq;
-  sentences_ = misc::Sorted(tokens);
-  LOG(INFO) << "Done! " << sentences_.size();
 }
 
 // ---------------------------------------------------------------------------
@@ -225,52 +271,12 @@ void PieceCounter::FreeTokenList(Token* head) {
 void PieceCounter::InitPairsStatsAndIndex(
     Multiset<std::pair<int, int>>& stats,
     PairIndex& pair_index) {
-  const int num_threads = counter_spec_.cpu_count();
-  if (num_threads > 1 && sentences_.size() > 256) {
-    const int nt = std::min(num_threads,
-                            static_cast<int>(sentences_.size()));
-    std::vector<DeltaMap> thread_counts(nt);
-    std::vector<std::vector<IndexEntry>> thread_indices(nt);
-    std::vector<std::thread> threads;
-    const size_t chunk = (sentences_.size() + nt - 1) / nt;
-
-    for (int t = 0; t < nt; ++t) {
-      const size_t start = t * chunk;
-      const size_t end = std::min(start + chunk, sentences_.size());
-      if (start >= end) break;
-      threads.emplace_back([&, t, start, end]() {
-        for (size_t j = start; j < end; ++j) {
-          const auto& text = sentences_[j].first;
-          const int64_t freq = sentences_[j].second;
-          for (size_t i = 0; i + 1 < text.size(); ++i) {
-            std::pair<int, int> pair = {
-                static_cast<int>(static_cast<uint8_t>(text[i])),
-                static_cast<int>(static_cast<uint8_t>(text[i + 1]))};
-            thread_counts[t][pair] += freq;
-            thread_indices[t].push_back({pair, j});
-          }
-        }
-      });
-    }
-    for (auto& t : threads) t.join();
-
-    for (const auto& counts : thread_counts)
-      for (const auto& [pair, count] : counts)
-        stats.Insert(pair, count);
-    for (const auto& indices : thread_indices)
-      for (const auto& [pair, sid] : indices)
-        pair_index[pair].push_back(sid);
-  } else {
-    for (size_t j = 0; j < sentences_.size(); ++j) {
-      const auto& text = sentences_[j].first;
-      const int freq = sentences_[j].second;
-      for (size_t i = 0; i + 1 < text.size(); ++i) {
-        std::pair<int, int> pair = {
-            static_cast<int>(static_cast<uint8_t>(text[i])),
-            static_cast<int>(static_cast<uint8_t>(text[i + 1]))};
-        stats.Insert(pair, freq);
-        pair_index[pair].push_back(j);
-      }
+  for (size_t j = 0; j < token_lists_.size(); ++j) {
+    const int64_t freq = freqs_[j];
+    for (Token* node = token_lists_[j]; node && node->next; node = node->next) {
+      std::pair<int, int> pair = {node->value, node->next->value};
+      stats.Insert(pair, freq);
+      pair_index[pair].push_back(j);
     }
   }
 }

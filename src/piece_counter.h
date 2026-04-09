@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -202,7 +201,6 @@ private:
 
   bool InitMetaPieces();
   bool LoadSentences();
-  void SplitSentencesByWhitespace();
 
   static Token* BuildTokenList(const std::string& text);
   static void FreeTokenList(Token* head);
@@ -218,6 +216,7 @@ private:
   std::map<int, std::pair<std::string, Model::Piece::Type>> meta_pieces_;
   std::vector<std::pair<std::vector<std::string>, float>> pieces_;
   Sentences sentences_;
+  std::vector<int64_t> freqs_;
   std::vector<Token*> token_lists_;
   CounterSpec counter_spec_;
   NormalizerSpec normalizer_spec_;

@@ -4,11 +4,13 @@ CN_INPUT := $(ROOT)/data/cn_sentences.txt
 EN_INPUT := $(ROOT)/data/en_sentences.txt
 MODEL_DIR := $(CURDIR)/output
 
-VOCAB_SIZE := 80000
-CPU        := 4
-NORMALIZE  := identity
+NORMALIZE       := identity
+VOCAB_SIZE      := 80000
+CPU             := 8
+MAX_SENTENCES   := 80000000
+MIN_COUNT       := 2
 
-METHODS := bytepiece
+METHODS := bytepiece sentencepiece piece
 
 # 默认训练所有方法
 all: $(METHODS)
@@ -16,10 +18,11 @@ all: $(METHODS)
 # 每种方法生成一个 .model 文件
 define METHOD_RULE
 $(1): $(MODEL_DIR)/$(1).model
-$(MODEL_DIR)/$(1).model: $(CN_INPUT) $(EN_INPUT) | $(MODEL_DIR)
+$(MODEL_DIR)/$(1).model: $(EN_INPUT) $(CN_INPUT) | $(MODEL_DIR)
 	$(BIN) count --method $(1) --input $(CN_INPUT) --input $(EN_INPUT) \
 		--vocab-size $(VOCAB_SIZE) --model $(MODEL_DIR)/$(1) \
-		--normalize $(NORMALIZE) --cpu $(CPU)
+		--normalize $(NORMALIZE) --cpu $(CPU) \
+		--max-sentences $(MAX_SENTENCES) --min-count $(MIN_COUNT)
 endef
 
 $(foreach m,$(METHODS),$(eval $(call METHOD_RULE,$(m))))

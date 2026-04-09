@@ -30,6 +30,8 @@ void PrintUsage(const char* prog) {
               << "  --vocab-size <int>     Vocabulary size (default: 8000)\n"
               << "  --normalize <name>     Normalizer: identity|NMT_NFKC (default: identity)\n"
               << "  --cpu <int>            Number of threads (default: 4)\n"
+              << "  --max-sentences <int>  Max input lines to load (default: 0=unlimited)\n"
+              << "  --min-count <int>      Discard tokens with freq < this (default: 32)\n"
               << "\nTokenize/Encode/Decode read from stdin, write to stdout.\n"
               << "Tokenize outputs space-separated pieces per line.\n"
               << "Encode outputs one token per line (piece TAB id).\n"
@@ -39,12 +41,15 @@ void PrintUsage(const char* prog) {
 void RunCount(const std::string& method,
               const std::vector<std::string>& inputs,
               const std::string& model_prefix, int vocab_size,
-              const std::string& normalizer_name, int cpu_count) {
+              const std::string& normalizer_name, int cpu_count,
+              int max_sentences, int min_count) {
     CounterSpec counter_spec;
     for (const auto& f : inputs) counter_spec.add_input(f);
     counter_spec.set_model_prefix(model_prefix);
     counter_spec.set_method(method);
     counter_spec.set_cpu_count(cpu_count);
+    counter_spec.set_max_sentences(max_sentences);
+    counter_spec.set_min_count(min_count);
 
     NormalizerSpec normalizer_spec;
     normalizer_spec.SetName(normalizer_name);
@@ -268,6 +273,8 @@ int main(int argc, char* argv[]) {
         int vocab_size = 8000;
         std::string normalizer = "identity";
         int cpu_count = 4;
+        int max_sentences = 0;
+        int min_count = 32;
 
         for (int i = 2; i < argc; i++) {
             if (std::strcmp(argv[i], "--method") == 0 && i + 1 < argc) {
@@ -282,6 +289,10 @@ int main(int argc, char* argv[]) {
                 normalizer = argv[++i];
             } else if (std::strcmp(argv[i], "--cpu") == 0 && i + 1 < argc) {
                 cpu_count = std::atoi(argv[++i]);
+            } else if (std::strcmp(argv[i], "--max-sentences") == 0 && i + 1 < argc) {
+                max_sentences = std::atoi(argv[++i]);
+            } else if (std::strcmp(argv[i], "--min-count") == 0 && i + 1 < argc) {
+                min_count = std::atoi(argv[++i]);
             } else {
                 std::cerr << "Unknown option: " << argv[i] << "\n";
                 piece::PrintUsage(argv[0]);
@@ -294,7 +305,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        piece::RunCount(method, inputs, model_prefix, vocab_size, normalizer, cpu_count);
+        piece::RunCount(method, inputs, model_prefix, vocab_size, normalizer, cpu_count, max_sentences, min_count);
 
     } else if (command == "tokenize" || command == "encode" || command == "decode") {
         std::string model_file;
