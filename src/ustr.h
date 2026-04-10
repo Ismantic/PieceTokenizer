@@ -12,6 +12,7 @@
 
 #include <string_view>
 #include <algorithm>
+#include <functional>
 #include <vector>
 
 namespace ustr {
@@ -100,12 +101,42 @@ inline int PieceToByte(std::string_view piece) {
 
 bool IsDigitToken(std::string_view text);
 
+// Returns true if the codepoint is a "word" character: a letter from any
+// script (Latin, Greek, Cyrillic, Arabic, CJK, Hangul, ...), a digit, a
+// CJK ideograph, or a combining mark that continues a word. Used by
+// SplitText to group contiguous word characters into runs.
+bool IsWordChar(uint32_t cp);
+
+// Returns true if `cp` is a Han (CJK) ideograph. Covers CJK Unified
+// Ideographs, Extension A, Extensions B-H in the supplementary plane,
+// and CJK Compatibility Ideographs. Used by cn-mode post-processing
+// to detect runs of Chinese characters.
+bool IsHan(uint32_t cp);
+
 bool IsPunctuationToken(std::string_view text);
 
+// A "separator" is any codepoint that breaks a word run: punctuation or
+// symbol. Digits are NOT separators -- they belong to the word class and
+// are grouped with adjacent letters by SplitText.
 inline bool IsSeparatorToken(std::string_view text) {
-  return IsDigitToken(text) || IsPunctuationToken(text);
+  return IsPunctuationToken(text);
 }
 
 std::vector<std::string_view> SplitText(std::string_view text, const std::string_view space);
+
+// CN-mode variant of SplitText. After running normal SplitText, each
+// resulting piece is further split at Han / non-Han boundaries: Han
+// runs are passed through `cn_cut` (a Unigram word segmenter), non-Han
+// runs are kept verbatim. A leading space sentinel inside a piece is
+// peeled off as a standalone token if (and only if) the piece would
+// otherwise attach the space to a Han character — Han words never
+// carry an attached space prefix.
+//
+// Returns owned strings (not views into `text`) because cutter outputs
+// are owned strings.
+using CnCutFn = std::function<std::vector<std::string>(std::string_view)>;
+std::vector<std::string> SplitTextCn(std::string_view text,
+                                     std::string_view space,
+                                     const CnCutFn& cn_cut);
 
 } // namespace ustr

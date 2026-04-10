@@ -118,6 +118,11 @@ public:
     int32_t cpu_count_ = 4;
     int32_t max_sentences_ = 0;  // 0 = unlimited
 
+    // Path to a TSV (`word\tfreq`) Chinese-segmenter dictionary. When
+    // non-empty, PieceCounter enters cn mode and runs Han runs through
+    // a Unigram cutter. Not serialized to the .model file.
+    std::string cn_dict_;
+
     int32_t unk_id_ = 0;
     int32_t bos_id_ = 1;
     int32_t eos_id_ = 2;
@@ -151,6 +156,9 @@ public:
 
     int32_t max_sentences() const { return max_sentences_; }
     void set_max_sentences(int32_t n) { max_sentences_ = n; }
+
+    const std::string& cn_dict() const { return cn_dict_; }
+    void set_cn_dict(const std::string& path) { cn_dict_ = path; }
     
     int32_t unk_id() const { return unk_id_; }
     int32_t bos_id() const { return bos_id_; }

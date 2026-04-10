@@ -52,5 +52,203 @@ TEST(UstrTest, EncodePODTest) {
     }
 }
 
+// U+2581 ▁ (SpaceSymbol used by SentencePiece-style normalizers).
+static const char* kSp = "\xE2\x96\x81";
+
+TEST(UstrTest, SplitTextLeadingSpaceAttachesToWord) {
+    std::string input = std::string("hello") + kSp + "world";
+    auto r = SplitText(input, kSp);
+    ASSERT_EQ(static_cast<size_t>(2), r.size());
+    EXPECT_EQ(std::string("hello"), std::string(r[0]));
+    EXPECT_EQ(std::string(kSp) + "world", std::string(r[1]));
+}
+
+TEST(UstrTest, SplitTextConsecutiveSpacesStandaloneThenAttached) {
+    // "a▁▁b" -> ["a", "▁", "▁b"]
+    std::string input = std::string("a") + kSp + kSp + "b";
+    auto r = SplitText(input, kSp);
+    ASSERT_EQ(static_cast<size_t>(3), r.size());
+    EXPECT_EQ(std::string("a"), std::string(r[0]));
+    EXPECT_EQ(std::string(kSp), std::string(r[1]));
+    EXPECT_EQ(std::string(kSp) + "b", std::string(r[2]));
+}
+
+TEST(UstrTest, SplitTextThreeSpaces) {
+    // "a▁▁▁b" -> ["a", "▁", "▁", "▁b"]
+    std::string input = std::string("a") + kSp + kSp + kSp + "b";
+    auto r = SplitText(input, kSp);
+    ASSERT_EQ(static_cast<size_t>(4), r.size());
+    EXPECT_EQ(std::string("a"), std::string(r[0]));
+    EXPECT_EQ(std::string(kSp), std::string(r[1]));
+    EXPECT_EQ(std::string(kSp), std::string(r[2]));
+    EXPECT_EQ(std::string(kSp) + "b", std::string(r[3]));
+}
+
+TEST(UstrTest, SplitTextSpaceBeforePunctAttaches) {
+    // "hello▁," -> ["hello", "▁,"]
+    std::string input = std::string("hello") + kSp + ",";
+    auto r = SplitText(input, kSp);
+    ASSERT_EQ(static_cast<size_t>(2), r.size());
+    EXPECT_EQ(std::string("hello"), std::string(r[0]));
+    EXPECT_EQ(std::string(kSp) + ",", std::string(r[1]));
+}
+
+TEST(UstrTest, SplitTextPunctAsWordPrefix) {
+    // "hello,world" -> ["hello", ",world"]
+    auto r = SplitText("hello,world", kSp);
+    ASSERT_EQ(static_cast<size_t>(2), r.size());
+    EXPECT_EQ(std::string("hello"), std::string(r[0]));
+    EXPECT_EQ(std::string(",world"), std::string(r[1]));
+}
+
+TEST(UstrTest, SplitTextConsecutivePunctBecomesRun) {
+    // "hello,,world" -> ["hello", ",,", "world"]
+    auto r = SplitText("hello,,world", kSp);
+    ASSERT_EQ(static_cast<size_t>(3), r.size());
+    EXPECT_EQ(std::string("hello"), std::string(r[0]));
+    EXPECT_EQ(std::string(",,"), std::string(r[1]));
+    EXPECT_EQ(std::string("world"), std::string(r[2]));
+}
+
+TEST(UstrTest, SplitTextPendingSpaceGoesToPunctNotWordPrefix) {
+    // "▁,a" -> ["▁,", "a"] (pending space forces alt-4 punct-run branch)
+    std::string input = std::string(kSp) + ",a";
+    auto r = SplitText(input, kSp);
+    ASSERT_EQ(static_cast<size_t>(2), r.size());
+    EXPECT_EQ(std::string(kSp) + ",", std::string(r[0]));
+    EXPECT_EQ(std::string("a"), std::string(r[1]));
+}
+
+TEST(UstrTest, SplitTextDigitsAreWordChars) {
+    // "hello123world" -> one run (digits are in word class).
+    auto r = SplitText("hello123world", kSp);
+    ASSERT_EQ(static_cast<size_t>(1), r.size());
+    EXPECT_EQ(std::string("hello123world"), std::string(r[0]));
+}
+
+TEST(UstrTest, SplitTextDigitRunWithLeadingSpace) {
+    // "year▁2024" -> ["year", "▁2024"]
+    std::string input = std::string("year") + kSp + "2024";
+    auto r = SplitText(input, kSp);
+    ASSERT_EQ(static_cast<size_t>(2), r.size());
+    EXPECT_EQ(std::string("year"), std::string(r[0]));
+    EXPECT_EQ(std::string(kSp) + "2024", std::string(r[1]));
+}
+
+TEST(UstrTest, SplitTextCJKWordRun) {
+    // "你好世界" -> single run.
+    auto r = SplitText("你好世界", kSp);
+    ASSERT_EQ(static_cast<size_t>(1), r.size());
+    EXPECT_EQ(std::string("你好世界"), std::string(r[0]));
+}
+
+TEST(UstrTest, SplitTextCJKPunctBreaksRun) {
+    // "你好，世界" -> ["你好", "，世界"] (，U+FF0C is a word-prefix punct)
+    auto r = SplitText("你好，世界", kSp);
+    ASSERT_EQ(static_cast<size_t>(2), r.size());
+    EXPECT_EQ(std::string("你好"), std::string(r[0]));
+    EXPECT_EQ(std::string("，世界"), std::string(r[1]));
+}
+
+TEST(UstrTest, SplitTextEmojiIsPunct) {
+    // "hi🙂bye" -> ["hi", "🙂bye"] (emoji is not word, followed by word).
+    auto r = SplitText("hi\xF0\x9F\x99\x82""bye", kSp);
+    ASSERT_EQ(static_cast<size_t>(2), r.size());
+    EXPECT_EQ(std::string("hi"), std::string(r[0]));
+    EXPECT_EQ(std::string("\xF0\x9F\x99\x82""bye"), std::string(r[1]));
+}
+
+TEST(UstrTest, IsHanBasics) {
+    EXPECT_TRUE(IsHan(0x4E2D));   // 中
+    EXPECT_TRUE(IsHan(0x9FFF));   // last in CJK Unified
+    EXPECT_TRUE(IsHan(0x3400));   // first in Ext A
+    EXPECT_TRUE(IsHan(0x20000));  // Ext B
+    EXPECT_TRUE(IsHan(0xF900));   // CJK Compat
+    EXPECT_FALSE(IsHan('a'));
+    EXPECT_FALSE(IsHan('5'));
+    EXPECT_FALSE(IsHan(0x3042));  // あ
+    EXPECT_FALSE(IsHan(0xAC00));  // 가
+    EXPECT_FALSE(IsHan(0xFF0C));  // ，
+}
+
+// Test cutter: cuts each Han codepoint into its own token, mimicking
+// a per-character cutter so we can verify SplitTextCn's structure.
+static std::vector<std::string> CharCutter(std::string_view s) {
+    std::vector<std::string> out;
+    const char* p = s.data();
+    const char* end = p + s.size();
+    while (p < end) {
+        const int n = std::min<int>(OneUTF8Size(p), end - p);
+        out.emplace_back(p, n);
+        p += n;
+    }
+    return out;
+}
+
+TEST(UstrTest, SplitTextCnBasicMix) {
+    // "Tom▁他是英国人Bat" — Han run cut per-char, space peeled off
+    // because the next thing after it is Han.
+    std::string input = std::string("Tom") + kSp + "他是英国人Bat";
+    auto r = SplitTextCn(input, kSp, CharCutter);
+    ASSERT_EQ(static_cast<size_t>(8), r.size());
+    EXPECT_EQ(std::string("Tom"), r[0]);
+    EXPECT_EQ(std::string(kSp), r[1]);
+    EXPECT_EQ(std::string("他"), r[2]);
+    EXPECT_EQ(std::string("是"), r[3]);
+    EXPECT_EQ(std::string("英"), r[4]);
+    EXPECT_EQ(std::string("国"), r[5]);
+    EXPECT_EQ(std::string("人"), r[6]);
+    EXPECT_EQ(std::string("Bat"), r[7]);
+}
+
+TEST(UstrTest, SplitTextCnSpaceAttachesToNonHan) {
+    // "你好▁world" — SplitText emits ["你好", "▁world"]; non-Han keeps space.
+    std::string input = std::string("你好") + kSp + "world";
+    auto r = SplitTextCn(input, kSp, CharCutter);
+    ASSERT_EQ(static_cast<size_t>(3), r.size());
+    EXPECT_EQ(std::string("你"), r[0]);
+    EXPECT_EQ(std::string("好"), r[1]);
+    EXPECT_EQ(std::string(kSp) + "world", r[2]);
+}
+
+TEST(UstrTest, SplitTextCnStandaloneSpacePassthrough) {
+    // "a▁▁世界" — SplitText: ["a", "▁", "▁世界"]; second piece has
+    // space + Han so the space is peeled in cn mode.
+    std::string input = std::string("a") + kSp + kSp + "世界";
+    auto r = SplitTextCn(input, kSp, CharCutter);
+    ASSERT_EQ(static_cast<size_t>(5), r.size());
+    EXPECT_EQ(std::string("a"), r[0]);
+    EXPECT_EQ(std::string(kSp), r[1]);
+    EXPECT_EQ(std::string(kSp), r[2]);
+    EXPECT_EQ(std::string("世"), r[3]);
+    EXPECT_EQ(std::string("界"), r[4]);
+}
+
+TEST(UstrTest, SplitTextCnPureNonHanUnchanged) {
+    // No Han chars: should match SplitText output (modulo string vs view).
+    std::string input = std::string("hello") + kSp + "world";
+    auto r = SplitTextCn(input, kSp, CharCutter);
+    ASSERT_EQ(static_cast<size_t>(2), r.size());
+    EXPECT_EQ(std::string("hello"), r[0]);
+    EXPECT_EQ(std::string(kSp) + "world", r[1]);
+}
+
+TEST(UstrTest, IsWordCharBasics) {
+    EXPECT_TRUE(IsWordChar('a'));
+    EXPECT_TRUE(IsWordChar('Z'));
+    EXPECT_TRUE(IsWordChar('5'));
+    EXPECT_TRUE(IsWordChar(0x4E2D));  // 中
+    EXPECT_TRUE(IsWordChar(0x3042));  // あ
+    EXPECT_TRUE(IsWordChar(0xAC00));  // 가
+    EXPECT_TRUE(IsWordChar(0x00E9));  // é
+    EXPECT_TRUE(IsWordChar(0x03B1));  // α
+    EXPECT_TRUE(IsWordChar(0x0410));  // А (Cyrillic)
+    EXPECT_FALSE(IsWordChar(' '));
+    EXPECT_FALSE(IsWordChar(','));
+    EXPECT_FALSE(IsWordChar(0xFF0C));  // ，
+    EXPECT_FALSE(IsWordChar(0x3002));  // 。
+    EXPECT_FALSE(IsWordChar(0x00D7));  // ×
+    EXPECT_FALSE(IsWordChar(0x1F642)); // 🙂
+}
 
 } // namespace ustr

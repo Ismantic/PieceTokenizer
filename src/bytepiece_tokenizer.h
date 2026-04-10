@@ -18,8 +18,12 @@ public:
     using EncodeResult = std::vector<std::pair<std::string, int>>;
     using StrToInt = std::unordered_map<std::string_view, int>;
 
+    // `fallback_weight` is the log-prob assigned to the single-character
+    // fallback edge in the Unigram lattice. Pass log(1/sum_of_freqs) to
+    // align with a NaiveCutter-style "freq=1 unknown word" penalty.
     explicit BytePieceTokenizer(
-        const std::unordered_map<std::string, float_t>& dict);
+        const std::unordered_map<std::string, float_t>& dict,
+        float_t fallback_weight = -10.0);
     explicit BytePieceTokenizer(const Model& model);
     ~BytePieceTokenizer();
 
@@ -46,6 +50,7 @@ private:
     int unk_id_ = -1;
     new_darts::DoubleArray<int> trie_;
     std::unordered_map<int, float_t> value_map_;
+    float_t fallback_weight_ = -10.0;
 };
 
 }  // namespace piece

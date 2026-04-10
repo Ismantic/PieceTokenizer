@@ -8,8 +8,11 @@
 namespace piece {
 
 BytePieceTokenizer::BytePieceTokenizer(
-    const std::unordered_map<std::string, float_t>& dict)
-    : model_(nullptr), normalizer_(NormalizerSpec()) {
+    const std::unordered_map<std::string, float_t>& dict,
+    float_t fallback_weight)
+    : model_(nullptr),
+      normalizer_(NormalizerSpec()),
+      fallback_weight_(fallback_weight) {
     InitTrie(dict);
 }
 
@@ -150,7 +153,7 @@ std::vector<BytePieceTokenizer::Match> BytePieceTokenizer::GetMatches(
         const int n = static_cast<int>(
             ustr::UTF8CharLen(static_cast<unsigned char>(text[pos])));
         if (pos + n - 1 < num) {
-            matches.emplace_back(pos + n - 1, n, -10.0);
+            matches.emplace_back(pos + n - 1, n, fallback_weight_);
         }
 
         const size_t kMaxNumResults = 16;

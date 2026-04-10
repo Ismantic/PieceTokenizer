@@ -15,6 +15,7 @@ set(LIB_SRCS
     src/bytepiece_counter.cc
     src/piece_tokenizer.cc
     src/piece_counter.cc
+    src/cut.cc
     src/naive_tokenizer.cc
     src/naive_counter.cc
 )

@@ -9,6 +9,12 @@ VOCAB_SIZE      := 80000
 CPU             := 8
 MAX_SENTENCES   := 10000000
 MIN_COUNT       := 2
+CN_DICT         :=
+
+# When CN_DICT is set (e.g. `make piece CN_DICT=/path/to/dict.txt`),
+# the `piece` method enters cn mode and pre-cuts Han runs with a
+# Unigram segmenter built from the dictionary.
+CN_DICT_FLAG := $(if $(CN_DICT),--cn-dict $(CN_DICT))
 
 METHODS := bytepiece sentencepiece piece
 
@@ -22,7 +28,8 @@ $(MODEL_DIR)/$(1).model: $(EN_INPUT) $(CN_INPUT) | $(MODEL_DIR)
 	$(BIN) count --method $(1) --input $(CN_INPUT) --input $(EN_INPUT) \
 		--vocab-size $(VOCAB_SIZE) --model $(MODEL_DIR)/$(1) \
 		--normalize $(NORMALIZE) --cpu $(CPU) \
-		--max-sentences $(MAX_SENTENCES) --min-count $(MIN_COUNT)
+		--max-sentences $(MAX_SENTENCES) --min-count $(MIN_COUNT) \
+		$(CN_DICT_FLAG)
 endef
 
 $(foreach m,$(METHODS),$(eval $(call METHOD_RULE,$(m))))

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "cut.h"
+
 namespace piece {
 
 PieceCounter::PieceCounter(const CounterSpec& counter_spec,
@@ -161,6 +163,22 @@ bool PieceCounter::LoadSentences() {
   const int num_threads = counter_spec_.cpu_count();
   constexpr size_t kBatchSize = 1000000;
 
+  // Optional cn-mode Unigram cutter for Han runs.
+  std::unique_ptr<CnCutter> cn_cutter;
+  ustr::CnCutFn cn_cut_fn;
+  if (!counter_spec_.cn_dict().empty()) {
+    auto dict = LoadCnDict(counter_spec_.cn_dict());
+    if (dict.empty()) {
+      LOG(ERROR) << "cn dict is empty: " << counter_spec_.cn_dict();
+      return false;
+    }
+    cn_cutter = std::make_unique<CnCutter>(dict);
+    cn_cut_fn = [cutter = cn_cutter.get()](std::string_view s) {
+      return cutter->Cut(s);
+    };
+    LOG(INFO) << "cn mode enabled";
+  }
+
   LOG(INFO) << "Loading and tokenizing sentences ...";
   std::unordered_map<std::string, int64_t> tokens;
   std::vector<std::string> batch;
@@ -171,25 +189,30 @@ bool PieceCounter::LoadSentences() {
       std::vector<std::string>(counter_spec_.input().begin(),
                                counter_spec_.input().end()));
 
+  auto split_one = [&](const std::string& line,
+                       std::unordered_map<std::string, int64_t>& sink) {
+    const std::string normalized = normalizer.Normalize(line);
+    if (cn_cutter) {
+      for (auto& w : ustr::SplitTextCn(normalized, space, cn_cut_fn))
+        sink[std::move(w)] += 1;
+    } else {
+      for (const auto& w : ustr::SplitText(normalized, space))
+        sink[std::string(w)] += 1;
+    }
+  };
+
   auto process_batch = [&]() {
     if (batch.empty()) return;
     if (num_threads <= 1 || batch.size() < 256) {
-      for (const auto& line : batch) {
-        std::string normalized = normalizer.Normalize(line);
-        for (const auto& w : ustr::SplitText(normalized, space))
-          tokens[std::string(w)] += 1;
-      }
+      for (const auto& line : batch) split_one(line, tokens);
     } else {
       std::vector<std::unordered_map<std::string, int64_t>>
           local_maps(num_threads);
       std::vector<std::thread> threads;
       for (int t = 0; t < num_threads; ++t) {
         threads.emplace_back([&, t]() {
-          for (size_t i = t; i < batch.size(); i += num_threads) {
-            std::string normalized = normalizer.Normalize(batch[i]);
-            for (const auto& w : ustr::SplitText(normalized, space))
-              local_maps[t][std::string(w)] += 1;
-          }
+          for (size_t i = t; i < batch.size(); i += num_threads)
+            split_one(batch[i], local_maps[t]);
         });
       }
       for (auto& t : threads) t.join();
