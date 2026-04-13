@@ -122,7 +122,8 @@ inline bool IsSeparatorToken(std::string_view text) {
   return IsPunctuationToken(text);
 }
 
-std::vector<std::string_view> SplitText(std::string_view text, const std::string_view space);
+std::vector<std::string_view> SplitText(std::string_view text, std::string_view space,
+                                        int cut = 0);
 
 // CN-mode variant of SplitText. After running normal SplitText, each
 // resulting piece is further split at Han / non-Han boundaries: Han
@@ -137,6 +138,7 @@ std::vector<std::string_view> SplitText(std::string_view text, const std::string
 using CnCutFn = std::function<std::vector<std::string>(std::string_view)>;
 std::vector<std::string> SplitTextCn(std::string_view text,
                                      std::string_view space,
-                                     const CnCutFn& cn_cut);
+                                     const CnCutFn& cn_cut,
+                                     int cut = 0);
 
 } // namespace ustr

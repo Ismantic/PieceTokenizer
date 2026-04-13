@@ -265,15 +265,20 @@ public:
     void SetSpace(const std::string& space_str) { space_ = space_str; }
     const std::string& GetSpace() const { return space_; }
 
+    void SetCut(int cut) { cut_ = cut; }
+    int GetCut() const { return cut_; }
+
     void Clear() {
         name_.clear();
         space_.clear();
+        cut_ = 0;
     }
 
     std::string AsStr() const {
         std::ostringstream oss;
         oss << "name=" << name_ << "\n";
         oss << "space=" << Escape(space_) << "\n";
+        oss << "cut=" << cut_ << "\n";
         return oss.str();
     }
 
@@ -295,6 +300,8 @@ public:
                 name_ = value;
             } else if (key == "space") {
                 space_ = Unescape(value);
+            } else if (key == "cut") {
+                cut_ = std::stoi(value);
             }
         }
 
@@ -304,6 +311,7 @@ public:
 private:
     std::string name_;
     std::string space_ = "\xe2\x96\x81";
+    int cut_ = 0;  // 0: default, 1: split spaces and punctuation independently
 };
 
 class Model {

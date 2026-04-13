@@ -170,6 +170,7 @@ bool PieceCounter::InitMetaPieces() {
 bool PieceCounter::LoadSentences() {
   const Normalizer normalizer(normalizer_spec_);
   const std::string_view space = normalizer_spec_.GetSpace();
+  const int cut = normalizer_spec_.GetCut();
   const int num_threads = counter_spec_.cpu_count();
   constexpr size_t kBatchSize = 1000000;
 
@@ -203,10 +204,10 @@ bool PieceCounter::LoadSentences() {
                        std::unordered_map<std::string, int64_t>& sink) {
     const std::string normalized = normalizer.Normalize(line);
     if (cn_cutter) {
-      for (auto& w : ustr::SplitTextCn(normalized, space, cn_cut_fn))
+      for (auto& w : ustr::SplitTextCn(normalized, space, cn_cut_fn, cut))
         sink[std::move(w)] += 1;
     } else {
-      for (const auto& w : ustr::SplitText(normalized, space))
+      for (const auto& w : ustr::SplitText(normalized, space, cut))
         sink[std::string(w)] += 1;
     }
   };

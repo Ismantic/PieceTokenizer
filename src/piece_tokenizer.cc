@@ -7,7 +7,8 @@ namespace piece {
 PieceTokenizer::PieceTokenizer(const Model& model, const std::string& cn_dict)
     : model_(&model),
       normalizer_(model.GetNormalizerSpec()),
-      space_(model.GetNormalizerSpec().GetSpace()) {
+      space_(model.GetNormalizerSpec().GetSpace()),
+      cut_(model.GetNormalizerSpec().GetCut()) {
   const auto& counter_spec = model_->GetCounterSpec();
   unk_id_ = counter_spec.unk_id();
 
@@ -65,7 +66,7 @@ PieceTokenizer::EncodeResult PieceTokenizer::Encode(std::string_view text) const
   // cutter-imposed Han word boundaries (matches training behavior).
   EncodeResult result;
   for (const auto& piece :
-       ustr::SplitTextCn(normalized, space_, cn_cut_fn_)) {
+       ustr::SplitTextCn(normalized, space_, cn_cut_fn_, cut_)) {
     std::vector<int> ids = BuildInitialTokenIds(piece);
     GreedyMerge(ids);
     auto sub = TokenIdsToResult(ids);

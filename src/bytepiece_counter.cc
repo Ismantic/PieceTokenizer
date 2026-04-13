@@ -142,6 +142,7 @@ bool BytePieceCounter::StreamCountRaw() {
 
   const Normalizer normalizer(normalizer_spec_);
   const std::string_view space = normalizer_spec_.GetSpace();
+  const int cut = normalizer_spec_.GetCut();
 
   auto iter = MakeIterator();
   size_t line_count = 0;
@@ -154,7 +155,7 @@ bool BytePieceCounter::StreamCountRaw() {
       const std::string& line = iter->value();
       if (line.empty()) continue;
       std::string normalized = normalizer.Normalize(line);
-      for (std::string_view word : ustr::SplitText(normalized, space)) {
+      for (std::string_view word : ustr::SplitText(normalized, space, cut)) {
         batch.emplace_back(word);
       }
     }
@@ -373,6 +374,7 @@ BytePieceCounter::Str2Int BytePieceCounter::StreamCountPieces() {
 
   const Normalizer normalizer(normalizer_spec_);
   const std::string_view space = normalizer_spec_.GetSpace();
+  const int cut = normalizer_spec_.GetCut();
 
   auto iter = MakeIterator();
   size_t line_count = 0;
@@ -404,7 +406,7 @@ BytePieceCounter::Str2Int BytePieceCounter::StreamCountPieces() {
         auto& local_counts = per_thread[w];
         for (size_t idx = begin; idx < end; ++idx) {
           std::string normalized = normalizer.Normalize(batch[idx]);
-          for (std::string_view word : ustr::SplitText(normalized, space)) {
+          for (std::string_view word : ustr::SplitText(normalized, space, cut)) {
             for (const auto& piece : Tokenize(std::string(word))) {
               if (!piece.empty()) local_counts[piece] += 1;
             }

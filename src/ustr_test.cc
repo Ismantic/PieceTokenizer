@@ -271,4 +271,46 @@ TEST(UstrTest, IsWordCharBasics) {
     EXPECT_FALSE(IsWordChar(0x1F642)); // 🙂
 }
 
+// ----------- cut=1 tests -----------
+
+TEST(UstrTest, SplitTextCut1English) {
+    // "▁Hello,▁World!" -> "▁" "Hello" "," "▁" "World" "!"
+    std::string input = std::string(kSp) + "Hello," + std::string(kSp) + "World!";
+    auto r = SplitText(input, kSp, 1);
+    ASSERT_EQ(static_cast<size_t>(6), r.size());
+    EXPECT_EQ(std::string(kSp), std::string(r[0]));
+    EXPECT_EQ(std::string("Hello"), std::string(r[1]));
+    EXPECT_EQ(std::string(","), std::string(r[2]));
+    EXPECT_EQ(std::string(kSp), std::string(r[3]));
+    EXPECT_EQ(std::string("World"), std::string(r[4]));
+    EXPECT_EQ(std::string("!"), std::string(r[5]));
+}
+
+TEST(UstrTest, SplitTextCut1Contraction) {
+    // "▁don't" -> "don" "'" "t"
+    std::string input = std::string(kSp) + "don't";
+    auto r = SplitText(input, kSp, 1);
+    ASSERT_EQ(static_cast<size_t>(4), r.size());
+    EXPECT_EQ(std::string(kSp), std::string(r[0]));
+    EXPECT_EQ(std::string("don"), std::string(r[1]));
+    EXPECT_EQ(std::string("'"), std::string(r[2]));
+    EXPECT_EQ(std::string("t"), std::string(r[3]));
+}
+
+TEST(UstrTest, SplitTextCut1Chinese) {
+    // "▁你好，世界。" -> "▁" "你好" "，" "世界" "。"
+    std::string input = std::string(kSp)
+        + "\xe4\xbd\xa0\xe5\xa5\xbd"      // 你好
+        + "\xef\xbc\x8c"                    // ，
+        + "\xe4\xb8\x96\xe7\x95\x8c"      // 世界
+        + "\xe3\x80\x82";                   // 。
+    auto r = SplitText(input, kSp, 1);
+    ASSERT_EQ(static_cast<size_t>(5), r.size());
+    EXPECT_EQ(std::string(kSp), std::string(r[0]));
+    EXPECT_EQ(std::string("\xe4\xbd\xa0\xe5\xa5\xbd"), std::string(r[1]));
+    EXPECT_EQ(std::string("\xef\xbc\x8c"), std::string(r[2]));
+    EXPECT_EQ(std::string("\xe4\xb8\x96\xe7\x95\x8c"), std::string(r[3]));
+    EXPECT_EQ(std::string("\xe3\x80\x82"), std::string(r[4]));
+}
+
 } // namespace ustr

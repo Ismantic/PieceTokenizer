@@ -57,6 +57,7 @@ bool SentencePieceCounter::LoadSentences() {
     const uint32_t UNK = counter_spec_.GetUnkUnicode();
     const Normalizer normalizer(normalizer_spec_);
     const std::string_view space = normalizer_spec_.GetSpace();
+    const int cut = normalizer_spec_.GetCut();
 
     // Batch-read + parallel normalize/split + merge into global map.
     LOG(INFO) << "Loading and tokenizing sentences ...";
@@ -76,7 +77,7 @@ bool SentencePieceCounter::LoadSentences() {
         if (num_threads <= 1 || batch.size() < 256) {
             for (const auto& line : batch) {
                 std::string normalized = normalizer.Normalize(line);
-                for (const auto& w : ustr::SplitText(normalized, space))
+                for (const auto& w : ustr::SplitText(normalized, space, cut))
                     tokens[std::string(w)] += 1;
             }
         } else {
@@ -89,7 +90,7 @@ bool SentencePieceCounter::LoadSentences() {
                         std::string normalized =
                             normalizer.Normalize(batch[i]);
                         for (const auto& w :
-                             ustr::SplitText(normalized, space))
+                             ustr::SplitText(normalized, space, cut))
                             local_maps[t][std::string(w)] += 1;
                     }
                 });

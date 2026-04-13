@@ -28,10 +28,11 @@ void PrintUsage(const char* prog) {
               << "  --input <file>         Input corpus file\n"
               << "  --model <prefix>       Model output prefix (default: tokenizer)\n"
               << "  --vocab-size <int>     Vocabulary size (default: 8000)\n"
-              << "  --normalize <name>     Normalizer: identity|NMT_NFKC (default: identity)\n"
+              << "  --normalize <name>     Normalizer: no|NMT_NFKC (default: no)\n"
               << "  --cpu <int>            Number of threads (default: 4)\n"
               << "  --max-sentences <int>  Max input lines to load (default: 0=unlimited)\n"
               << "  --min-count <int>      Discard tokens with freq < this (default: 32)\n"
+              << "  --cut <0|1>            Pre-tokenize mode: 0=default, 1=split spaces/punct independently\n"
               << "  --max-piece-size <int> Max bytes per learned piece (default: 18, ~6 CJK chars)\n"
               << "  --cn-dict <file>       Enable CN mode for `piece` method using\n"
               << "                         a TSV (word\\tfreq) Unigram dictionary\n"
@@ -50,7 +51,7 @@ void RunCount(const std::string& method,
               const std::string& model_prefix, int vocab_size,
               const std::string& normalizer_name, int cpu_count,
               int max_sentences, int min_count, int max_piece_size,
-              const std::string& cn_dict) {
+              const std::string& cn_dict, int cut) {
     CounterSpec counter_spec;
     for (const auto& f : inputs) counter_spec.add_input(f);
     counter_spec.set_model_prefix(model_prefix);
@@ -69,6 +70,7 @@ void RunCount(const std::string& method,
 
     NormalizerSpec normalizer_spec;
     normalizer_spec.SetName(normalizer_name);
+    normalizer_spec.SetCut(cut);
 
     // Adjust vocab_size for byte tokens and control tokens
     int size = vocab_size;
@@ -295,11 +297,12 @@ int main(int argc, char* argv[]) {
         std::vector<std::string> inputs;
         std::string model_prefix = "tokenizer";
         int vocab_size = 8000;
-        std::string normalizer = "identity";
+        std::string normalizer = "no";
         int cpu_count = 4;
         int max_sentences = 0;
         int min_count = 32;
         int max_piece_size = 18;
+        int cut = 0;
         std::string cn_dict;
 
         for (int i = 2; i < argc; i++) {
@@ -323,6 +326,8 @@ int main(int argc, char* argv[]) {
                 max_piece_size = std::atoi(argv[++i]);
             } else if (std::strcmp(argv[i], "--cn-dict") == 0 && i + 1 < argc) {
                 cn_dict = argv[++i];
+            } else if (std::strcmp(argv[i], "--cut") == 0 && i + 1 < argc) {
+                cut = std::atoi(argv[++i]);
             } else {
                 std::cerr << "Unknown option: " << argv[i] << "\n";
                 piece::PrintUsage(argv[0]);
@@ -335,7 +340,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        piece::RunCount(method, inputs, model_prefix, vocab_size, normalizer, cpu_count, max_sentences, min_count, max_piece_size, cn_dict);
+        piece::RunCount(method, inputs, model_prefix, vocab_size, normalizer, cpu_count, max_sentences, min_count, max_piece_size, cn_dict, cut);
 
     } else if (command == "tokenize" || command == "encode" || command == "decode") {
         std::string model_file;

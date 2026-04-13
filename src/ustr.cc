@@ -268,11 +268,43 @@ bool IsPunctuationToken(std::string_view text) {
 // Assumes the normalizer has already stripped leading/trailing whitespace
 // and replaced ' ' with the `space` sentinel (which may be multi-byte).
 std::vector<std::string_view> SplitText(std::string_view text,
-                                        const std::string_view space) {
+                                        std::string_view space,
+                                        int cut) {
     std::vector<std::string_view> result;
     const char* begin = text.data();
     const char* end = text.data() + text.size();
     if (begin >= end) return result;
+
+    // cut=1: spaces and punctuation each become independent tokens.
+    if (cut == 1) {
+        const char* p = begin;
+        while (p < end) {
+            const int clen = std::min<int>(OneUTF8Size(p), end - p);
+            std::string_view ch(p, clen);
+
+            if (ch == space) {
+                // Space → standalone token.
+                result.emplace_back(p, clen);
+                p += clen;
+            } else if (IsPunctuationToken(ch)) {
+                // Punctuation → standalone token.
+                result.emplace_back(p, clen);
+                p += clen;
+            } else {
+                // Word char → consume maximal run.
+                const char* run_start = p;
+                p += clen;
+                while (p < end) {
+                    const int wlen = std::min<int>(OneUTF8Size(p), end - p);
+                    std::string_view wch(p, wlen);
+                    if (wch == space || IsPunctuationToken(wch)) break;
+                    p += wlen;
+                }
+                result.emplace_back(run_start, p - run_start);
+            }
+        }
+        return result;
+    }
 
     auto char_len = [&](const char* p) -> int {
         return std::min<int>(ustr::OneUTF8Size(p), end - p);
@@ -398,9 +430,10 @@ std::vector<std::string_view> SplitText(std::string_view text,
 
 std::vector<std::string> SplitTextCn(std::string_view text,
                                      std::string_view space,
-                                     const CnCutFn& cn_cut) {
+                                     const CnCutFn& cn_cut,
+                                     int cut) {
     std::vector<std::string> result;
-    const auto pieces = SplitText(text, space);
+    const auto pieces = SplitText(text, space, cut);
 
     // SplitText already splits at Han / non-Han boundaries and peels
     // space prefixes from Han runs. Each piece is either entirely Han

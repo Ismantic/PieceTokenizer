@@ -53,6 +53,7 @@ private:
   std::unique_ptr<CnCutter> cn_cutter_;
   ustr::CnCutFn cn_cut_fn_;
   std::string space_;
+  int cut_;
 };
 
 }  // namespace piece
