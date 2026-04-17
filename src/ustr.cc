@@ -284,7 +284,13 @@ bool IsPunctuationToken(std::string_view text) {
 //   - \p{H}+ separate from \p{A}+ (Han never carries space prefix)
 //   - \s instead of \s+(?!\S)|\s+ (each extra space is standalone)
 //
-// cut=1: spaces and punctuation all become independent tokens.
+// cut=1: no prefix attachment, every space/punct is independent:
+//
+//   \p{A}+                            letters
+//   |\p{H}+                           Han run
+//   |\p{N}+                           digit run
+//   |[^\s\p{A}\p{H}\p{N}]            single punct/symbol
+//   |\s                               single whitespace
 //
 std::vector<std::string_view> SplitText(std::string_view text,
                                         std::string_view space,
@@ -295,28 +301,39 @@ std::vector<std::string_view> SplitText(std::string_view text,
     if (begin >= end) return result;
 
     // cut=1: spaces and punctuation each become independent tokens.
+    // Letters, digits, and Han also form separate runs (same as cut=0).
     if (cut == 1) {
+        enum Kind1 { kSpace1, kLetter1, kDigit1, kHan1, kPunct1 };
+        auto classify1 = [&](const char* p, int len) -> Kind1 {
+            std::string_view c(p, len);
+            if (c == space) return kSpace1;
+            size_t mblen = 0;
+            const uint32_t cp = DecodeUTF8(p, end, &mblen);
+            if (IsHan(cp)) return kHan1;
+            if (IsDigitCodepoint(cp)) return kDigit1;
+            if (IsWordChar(cp)) return kLetter1;
+            return kPunct1;
+        };
+        auto char_len1 = [&](const char* p) -> int {
+            return std::min<int>(OneUTF8Size(p), end - p);
+        };
+
         const char* p = begin;
         while (p < end) {
-            const int clen = std::min<int>(OneUTF8Size(p), end - p);
-            std::string_view ch(p, clen);
+            const int clen = char_len1(p);
+            const Kind1 kind = classify1(p, clen);
 
-            if (ch == space) {
-                // Space → standalone token.
-                result.emplace_back(p, clen);
-                p += clen;
-            } else if (IsPunctuationToken(ch)) {
-                // Punctuation → standalone token.
+            if (kind == kSpace1 || kind == kPunct1) {
+                // Space and punctuation → each standalone token.
                 result.emplace_back(p, clen);
                 p += clen;
             } else {
-                // Word char → consume maximal run.
+                // Letter/Digit/Han → consume same-kind run.
                 const char* run_start = p;
                 p += clen;
                 while (p < end) {
-                    const int wlen = std::min<int>(OneUTF8Size(p), end - p);
-                    std::string_view wch(p, wlen);
-                    if (wch == space || IsPunctuationToken(wch)) break;
+                    const int wlen = char_len1(p);
+                    if (classify1(p, wlen) != kind) break;
                     p += wlen;
                 }
                 result.emplace_back(run_start, p - run_start);

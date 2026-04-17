@@ -315,6 +315,17 @@ TEST(UstrTest, SplitTextCut1Chinese) {
     EXPECT_EQ(std::string("\xe3\x80\x82"), std::string(r[4]));
 }
 
+TEST(UstrTest, SplitTextCut1MixedTypes) {
+    // "hello123你好" -> "hello" "123" "你好"
+    std::string input = std::string("hello123")
+        + "\xe4\xbd\xa0\xe5\xa5\xbd";  // 你好
+    auto r = SplitText(input, kSp, 1);
+    ASSERT_EQ(static_cast<size_t>(3), r.size());
+    EXPECT_EQ(std::string("hello"), std::string(r[0]));
+    EXPECT_EQ(std::string("123"), std::string(r[1]));
+    EXPECT_EQ(std::string("\xe4\xbd\xa0\xe5\xa5\xbd"), std::string(r[2]));
+}
+
 // ----------- GPT-4 alignment tests -----------
 
 TEST(UstrTest, SplitTextPunctPrefixOnlyForLetters) {
