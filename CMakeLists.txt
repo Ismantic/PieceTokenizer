@@ -36,6 +36,7 @@ target_link_libraries(piece_tokenizer_test PRIVATE piece_tokenizer_lib)
 
 option(BUILD_PYTHON "Build Python bindings" OFF)
 if(BUILD_PYTHON)
+    set(PYBIND11_FINDPYTHON ON)
     find_package(pybind11 REQUIRED)
     add_subdirectory(python)
 endif()
