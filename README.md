@@ -58,21 +58,62 @@ echo "你好世界" | ./build/piece-tokenizer encode --model output/bytepiece.mo
 echo "231 192 163 897" | ./build/piece-tokenizer decode --model output/bytepiece.model
 ```
 
+### 预分词（PreTokenize）
+
+不需要模型文件，直接对文本做 Normalize + SplitText：
+
+```bash
+# cut=0（默认，对齐 GPT-4 regex）
+echo "Hello, World! don't 你好，世界。123abc" | ./build/piece-tokenizer pretokenize --cut 0
+# Hello , ▁World ! ▁don 't ▁ 你好 ， 世界 。 123 abc
+
+# cut=1（空格和标点全部独立，保留英文缩写）
+echo "Hello, World! don't 你好，世界。123abc" | ./build/piece-tokenizer pretokenize --cut 1
+# Hello , ▁ World ! ▁ don't ▁ 你好 ， 世界 。 123 abc
+
+# 带归一化
+echo "HELLO" | ./build/piece-tokenizer pretokenize --normalize NFKC_CF
+# hello
+
+# 保留所有空格（不合并、不去首尾）
+echo "  Hello   World  " | ./build/piece-tokenizer pretokenize --reconstruct
+# ▁ ▁Hello ▁ ▁ ▁World ▁ ▁
+```
+
+### 词频统计（raw-count）
+
+对输入做预分词后统计词频，输出 `word\tfreq` 格式（按频率降序）：
+
+```bash
+./build/piece-tokenizer raw-count --input corpus.txt --cut 1 --output raw_count.txt
+```
+
 ### Python 接口
 
 ```python
-import piece_tokenizer
+import piece_tokenizer as pt
 
-tok = piece_tokenizer.Tokenizer()
+# PreTokenizer：Normalize + SplitText，不需要模型文件
+p = pt.PreTokenizer(normalize='no', cut=0)
+p.tokenize("Hello, World!")        # → ['Hello', ',', '▁World', '!']
+
+p1 = pt.PreTokenizer(cut=1)
+p1.tokenize("Hello, World!")       # → ['Hello', ',', '▁', 'World', '!']
+
+p2 = pt.PreTokenizer(reconstruct=True)
+p2.tokenize("  Hello  ")           # → ['▁', '▁Hello', '▁', '▁']
+
+# Tokenizer：加载训练好的模型做编码/解码
+tok = pt.Tokenizer()
 tok.load("output/bytepiece.model")
 
-tok.encode("你好世界")            # → [('你', 897), ('好', 411), ...]
-tok.encode_as_ids("你好世界")     # → [897, 411, ...]
-tok.encode_as_pieces("你好世界")  # → ['你', '好', ...]
-tok.decode([897, 411, 591])       # → '你好世界'
+tok.encode("你好世界")             # → [('你', 897), ('好', 411), ...]
+tok.encode_as_ids("你好世界")      # → [897, 411, ...]
+tok.encode_as_pieces("你好世界")   # → ['你', '好', ...]
+tok.decode([897, 411, 591])        # → '你好世界'
 
-tok.vocab_size()                  # → 8259
-tok.method                        # → 'bytepiece'
+tok.vocab_size()                   # → 8259
+tok.method                         # → 'bytepiece'
 ```
 
 ## Tokenizer 方法
