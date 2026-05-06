@@ -77,6 +77,14 @@ bool BytePieceCounter::Serialize(Model* model) const {
     }
   }
 
+  // Append extra CONTROL tokens
+  for (const auto& token : counter_spec_.extra_tokens()) {
+    auto* p = model->InsertPieces();
+    p->SetPiece(token);
+    p->SetType(Model::Piece::CONTROL);
+    p->SetScore(0.0);
+    ++total;
+  }
   CounterSpec spec = counter_spec_;
   spec.set_vocab_size(total);
   model->SetCounterSpec(spec);

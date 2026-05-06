@@ -93,7 +93,11 @@ public:
     std::string bos_piece_ = "<s>";
     std::string eos_piece_ = "</s>";
     std::string pad_piece_ = "<pad>";
-    
+
+    // Extra CONTROL tokens appended after the normal vocabulary.
+    // Each string becomes a CONTROL-type piece at the end of the vocab.
+    std::vector<std::string> extra_tokens_;
+
     const std::vector<std::string>& input() const { return input_; }
     void add_input(const std::string& input) { input_.push_back(input); }
     
@@ -135,6 +139,9 @@ public:
     const std::string& pad_piece() const { return pad_piece_; }
     
     uint32_t GetUnkUnicode() const { return unk_unicode_; }
+
+    const std::vector<std::string>& extra_tokens() const { return extra_tokens_; }
+    void add_extra_token(const std::string& token) { extra_tokens_.push_back(token); }
     
     void Clear() {
         input_.clear();
@@ -161,6 +168,15 @@ public:
         oss << "bos_piece=" << bos_piece_ << "\n";
         oss << "eos_piece=" << eos_piece_ << "\n";
         oss << "pad_piece=" << pad_piece_ << "\n";
+
+        if (!extra_tokens_.empty()) {
+            oss << "extra_tokens=";
+            for (size_t i = 0; i < extra_tokens_.size(); ++i) {
+                if (i > 0) oss << ",";
+                oss << extra_tokens_[i];
+            }
+            oss << "\n";
+        }
 
         return oss.str();
     }
@@ -207,6 +223,13 @@ public:
                 eos_piece_ = value;
             } else if (key == "pad_piece") {
                 pad_piece_ = value;
+            } else if (key == "extra_tokens") {
+                extra_tokens_.clear();
+                std::istringstream ts(value);
+                std::string token;
+                while (std::getline(ts, token, ',')) {
+                    if (!token.empty()) extra_tokens_.push_back(token);
+                }
             }
         }
         

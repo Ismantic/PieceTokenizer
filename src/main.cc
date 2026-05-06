@@ -1,6 +1,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -61,7 +62,8 @@ void RunCount(const std::string& method,
               const std::string& model_prefix, int vocab_size,
               const std::string& normalizer_name, int cpu_count,
               int max_sentences, int min_count, int max_piece_size,
-              const std::string& cn_dict, int cut, bool reconstruct) {
+              const std::string& cn_dict, int cut, bool reconstruct,
+              const std::vector<std::string>& extra_tokens = {}) {
     CounterSpec counter_spec;
     for (const auto& f : inputs) counter_spec.add_input(f);
     counter_spec.set_model_prefix(model_prefix);
@@ -71,6 +73,8 @@ void RunCount(const std::string& method,
     counter_spec.set_min_count(min_count);
     counter_spec.set_max_piece_size(max_piece_size);
     counter_spec.set_cn_dict(cn_dict);
+
+    for (const auto& t : extra_tokens) counter_spec.add_extra_token(t);
 
     if (!cn_dict.empty() && method != "piece") {
         std::cerr << "Warning: --cn-dict is only supported for --method piece; "
@@ -316,6 +320,7 @@ int main(int argc, char* argv[]) {
         int cut = 0;
         bool reconstruct = false;
         std::string cn_dict;
+        std::vector<std::string> extra_tokens;
 
         for (int i = 2; i < argc; i++) {
             if (std::strcmp(argv[i], "--method") == 0 && i + 1 < argc) {
@@ -342,6 +347,12 @@ int main(int argc, char* argv[]) {
                 cut = std::atoi(argv[++i]);
             } else if (std::strcmp(argv[i], "--reconstruct") == 0) {
                 reconstruct = true;
+            } else if (std::strcmp(argv[i], "--extra-tokens") == 0 && i + 1 < argc) {
+                std::istringstream ts(argv[++i]);
+                std::string token;
+                while (std::getline(ts, token, ',')) {
+                    if (!token.empty()) extra_tokens.push_back(token);
+                }
             } else {
                 std::cerr << "Unknown option: " << argv[i] << "\n";
                 piece::PrintUsage(argv[0]);
@@ -354,7 +365,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        piece::RunCount(method, inputs, model_prefix, vocab_size, normalizer, cpu_count, max_sentences, min_count, max_piece_size, cn_dict, cut, reconstruct);
+        piece::RunCount(method, inputs, model_prefix, vocab_size, normalizer, cpu_count, max_sentences, min_count, max_piece_size, cn_dict, cut, reconstruct, extra_tokens);
 
     } else if (command == "pretokenize") {
         std::string normalizer = "no";

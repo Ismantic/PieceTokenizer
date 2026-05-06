@@ -141,6 +141,13 @@ bool PieceCounter::Serialize(Model* model) const {
       return false;
     }
   }
+  // Append extra CONTROL tokens at the end of the vocabulary
+  for (const auto& token : counter_spec_.extra_tokens()) {
+    auto* p = model->InsertPieces();
+    p->SetPiece(token);
+    p->SetType(Model::Piece::CONTROL);
+    p->SetScore(0.0);
+  }
   model->SetCounterSpec(counter_spec_);
   model->SetNormalizerSpec(normalizer_spec_);
   return true;

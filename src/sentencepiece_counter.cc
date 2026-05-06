@@ -506,6 +506,13 @@ bool SentencePieceCounter::Serialize(Model* model) const {
         }
     }
 
+    // Append extra CONTROL tokens
+    for (const auto& token : counter_spec_.extra_tokens()) {
+        auto* p = model->InsertPieces();
+        p->SetPiece(token);
+        p->SetType(Model::Piece::CONTROL);
+        p->SetScore(0.0);
+    }
     model->SetCounterSpec(counter_spec_);
     model->SetNormalizerSpec(normalizer_spec_);
 
