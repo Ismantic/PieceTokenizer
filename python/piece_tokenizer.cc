@@ -21,7 +21,7 @@ class PyTokenizer {
 public:
     PyTokenizer() = default;
 
-    bool Load(const std::string& model_file) {
+    bool Load(const std::string& model_file, const std::string& cn_dict = "") {
         if (!model_.Load(model_file)) {
             return false;
         }
@@ -33,7 +33,7 @@ public:
         if (method_ == "naive") {
             naive_tok_ = std::make_unique<NaiveTokenizer>(model_);
         } else if (method_ == "piece") {
-            piece_tok_ = std::make_unique<PieceTokenizer>(model_);
+            piece_tok_ = std::make_unique<PieceTokenizer>(model_, cn_dict);
         } else if (method_ == "sentencepiece") {
             sp_tok_ = std::make_unique<SentencePieceTokenizer>(model_);
         } else if (method_ == "bytepiece") {
@@ -160,8 +160,8 @@ PYBIND11_MODULE(piece_tokenizer, m) {
 
     py::class_<PyTokenizer>(m, "Tokenizer")
         .def(py::init<>())
-        .def("load", &PyTokenizer::Load, py::arg("model_file"),
-             "Load a trained model file")
+        .def("load", &PyTokenizer::Load, py::arg("model_file"), py::arg("cn_dict") = "",
+             "Load a trained model file, optionally with cn-dict for piece method")
         .def("encode", &PyTokenizer::Encode, py::arg("text"),
              "Encode text into (piece, id) pairs")
         .def("encode_as_ids", &PyTokenizer::EncodeAsIds, py::arg("text"),
