@@ -1,5 +1,6 @@
 ROOT     := $(shell cd .. && pwd)
-BIN      := $(ROOT)/build/piece-tokenizer
+# Auto-detect cmake build dir: build_venv (when build/ is occupied by setuptools) or build
+BIN := $(firstword $(wildcard $(ROOT)/build_venv/piece-tokenizer $(ROOT)/build/piece-tokenizer))
 #CN_INPUT := $(ROOT)/data/cn_sentences.txt
 CN_INPUT :=
 EN_INPUT := $(ROOT)/data/en_sentences.txt
@@ -15,11 +16,15 @@ RECONSTRUCT     := 0
 MAX_PIECE_SIZE  := 0
 #CN_DICT         := dict.txt
 CN_DICT         := no
+EXTRA_TOKENS    :=
 
 # When CN_DICT is set (e.g. `make piece CN_DICT=/path/to/dict.txt`),
 # the `piece` method enters cn mode and pre-cuts Han runs with a
 # Unigram segmenter built from the dictionary.
-CN_DICT_FLAG := $(if $(CN_DICT),--cn-dict $(CN_DICT))
+# When EXTRA_TOKENS is set (comma-separated, e.g. `EXTRA_TOKENS="<|bos|>,<|eos|>"`),
+# those strings are appended to the vocabulary as CONTROL pieces at the end.
+CN_DICT_FLAG := $(if $(filter-out no,$(CN_DICT)),--cn-dict $(CN_DICT))
+EXTRA_TOKENS_FLAG := $(if $(EXTRA_TOKENS),--extra-tokens '$(EXTRA_TOKENS)')
 RECONSTRUCT_FLAG := $(if $(filter-out 0,$(RECONSTRUCT)),--reconstruct)
 CN_INPUT_FLAG := $(if $(CN_INPUT),--input $(CN_INPUT))
 EN_INPUT_FLAG := $(if $(EN_INPUT),--input $(EN_INPUT))
@@ -38,7 +43,7 @@ $(MODEL_DIR)/$(1).model: $(wildcard $(EN_INPUT)) $(wildcard $(CN_INPUT)) | $(MOD
 		--normalize $(NORMALIZE) --cpu $(CPU) \
 		--max-sentences $(MAX_SENTENCES) --min-count $(MIN_COUNT) \
 		--cut $(CUT) $(RECONSTRUCT_FLAG) \
-		$(CN_DICT_FLAG)
+		$(CN_DICT_FLAG) $(EXTRA_TOKENS_FLAG)
 endef
 
 $(foreach m,$(METHODS),$(eval $(call METHOD_RULE,$(m))))

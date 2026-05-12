@@ -114,6 +114,17 @@ public:
         return "";
     }
 
+    // Bytes-typed accessor: BPE fragment pieces may not form valid UTF-8 by
+    // themselves, so this returns the raw bytes without trying to decode.
+    py::bytes IdToPieceBytes(int id) const {
+        const auto& pieces = model_.GetPieces();
+        if (id >= 0 && id < static_cast<int>(pieces.size())) {
+            const std::string& s = pieces[id].GetPiece();
+            return py::bytes(s.data(), s.size());
+        }
+        return py::bytes();
+    }
+
     int VocabSize() const {
         return static_cast<int>(model_.PiecesSize());
     }
@@ -174,6 +185,8 @@ PYBIND11_MODULE(piece_tokenizer, m) {
              "Convert a piece string to its id")
         .def("id_to_piece", &PyTokenizer::IdToPiece, py::arg("id"),
              "Convert an id to its piece string")
+        .def("id_to_piece_bytes", &PyTokenizer::IdToPieceBytes, py::arg("id"),
+             "Convert an id to its raw piece bytes (safe for non-UTF-8 fragments)")
         .def("vocab_size", &PyTokenizer::VocabSize,
              "Get vocabulary size")
         .def_property_readonly("method", &PyTokenizer::Method,
