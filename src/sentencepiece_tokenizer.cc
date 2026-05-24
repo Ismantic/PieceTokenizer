@@ -2,15 +2,46 @@
 
 #include <queue>
 
+#include "cut.h"
 #include "piece_spec.h"
-#include "ustr.h"
 
 namespace piece {
 
-SentencePieceTokenizer::SentencePieceTokenizer(const Model& model)
+SentencePieceTokenizer::SentencePieceTokenizer(const Model& model,
+                                               const std::string& cn_dict)
     : model_(&model),
       normalizer_(model.GetNormalizerSpec()),
-      unk_id_(-1) {
+      unk_id_(-1),
+      space_(model.GetNormalizerSpec().GetSpace()),
+      cut_(model.GetNormalizerSpec().GetCut()) {
+  // cn mode: pre-split Han runs to match training behavior (per-character or dict).
+  // When cn_dict is empty, no pre-split happens (default sentencepiece behavior).
+  if (cn_dict == "no") {
+    cn_cut_fn_ = [](std::string_view s) {
+      std::vector<std::string> out;
+      const char* p = s.data();
+      const char* end = p + s.size();
+      while (p < end) {
+        const int n = std::min<int>(ustr::OneUTF8Size(p), end - p);
+        out.emplace_back(p, n);
+        p += n;
+      }
+      return out;
+    };
+    LOG(INFO) << "SentencePieceTokenizer cn mode enabled (per-character)";
+  } else if (!cn_dict.empty()) {
+    auto dict = LoadCnDict(cn_dict);
+    if (!dict.empty()) {
+      cn_cutter_ = std::make_unique<CnCutter>(dict);
+      cn_cut_fn_ = [cutter = cn_cutter_.get()](std::string_view s) {
+        return cutter->Cut(s);
+      };
+      LOG(INFO) << "SentencePieceTokenizer cn mode enabled (dict)";
+    } else {
+      LOG(ERROR) << "cn dict is empty: " << cn_dict;
+    }
+  }
+
   for (size_t i = 0; i < model_->PiecesSize(); ++i) {
     const auto& p = model_->GetPieces(i);
     pieces_[p.GetPiece()] = i;
@@ -50,7 +81,23 @@ int SentencePieceTokenizer::PieceID(std::string_view piece) const {
 
 EncodeResult SentencePieceTokenizer::Encode(std::string_view str) const {
     std::string ns = normalizer_.Normalize(str);
-    std::string_view text = ns;
+    if (!cn_cut_fn_) {
+        return EncodeSegment(ns);
+    }
+    // cn mode: pre-split with SplitTextCn so BPE merging cannot cross
+    // cutter-imposed Han word boundaries (matches training behavior).
+    EncodeResult result;
+    for (const auto& piece :
+         ustr::SplitTextCn(ns, space_, cn_cut_fn_, cut_)) {
+        auto sub = EncodeSegment(piece);
+        result.insert(result.end(),
+                      std::make_move_iterator(sub.begin()),
+                      std::make_move_iterator(sub.end()));
+    }
+    return result;
+}
+
+EncodeResult SentencePieceTokenizer::EncodeSegment(std::string_view text) const {
     if (text.empty()) {
         return {};
     }

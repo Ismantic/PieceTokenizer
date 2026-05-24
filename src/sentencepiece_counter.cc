@@ -4,6 +4,7 @@
 #include <thread>
 
 #include "common.h"
+#include "cut.h"
 #include "normalizer.h"
 
 namespace piece {
@@ -59,6 +60,38 @@ bool SentencePieceCounter::LoadSentences() {
     const std::string_view space = normalizer_spec_.GetSpace();
     const int cut = normalizer_spec_.GetCut();
 
+    // Optional cn-mode cutter for Han runs (parallel with piece method).
+    // cn_dict="no" → per-character (force Han characters to be single tokens).
+    // cn_dict=<path> → dict-based Unigram pre-segmentation.
+    // cn_dict=""    → no cn mode; Han runs go through normal BPE merging.
+    std::unique_ptr<CnCutter> cn_cutter;
+    ustr::CnCutFn cn_cut_fn;
+    if (counter_spec_.cn_dict() == "no") {
+        cn_cut_fn = [](std::string_view s) {
+            std::vector<std::string> out;
+            const char* p = s.data();
+            const char* end = p + s.size();
+            while (p < end) {
+                const int n = std::min<int>(ustr::OneUTF8Size(p), end - p);
+                out.emplace_back(p, n);
+                p += n;
+            }
+            return out;
+        };
+        LOG(INFO) << "cn mode enabled (per-character)";
+    } else if (!counter_spec_.cn_dict().empty()) {
+        auto dict = LoadCnDict(counter_spec_.cn_dict());
+        if (dict.empty()) {
+            LOG(ERROR) << "cn dict is empty: " << counter_spec_.cn_dict();
+            return false;
+        }
+        cn_cutter = std::make_unique<CnCutter>(dict);
+        cn_cut_fn = [cutter = cn_cutter.get()](std::string_view s) {
+            return cutter->Cut(s);
+        };
+        LOG(INFO) << "cn mode enabled (dict)";
+    }
+
     // Batch-read + parallel normalize/split + merge into global map.
     LOG(INFO) << "Loading and tokenizing sentences ...";
     const int num_threads = counter_spec_.cpu_count();
@@ -72,27 +105,30 @@ bool SentencePieceCounter::LoadSentences() {
         std::vector<std::string>(counter_spec_.input().begin(),
                                  counter_spec_.input().end()));
 
+    auto split_one = [&](const std::string& line,
+                         std::unordered_map<std::string, int64_t>& sink) {
+        const std::string normalized = normalizer.Normalize(line);
+        if (cn_cut_fn) {
+            for (auto& w : ustr::SplitTextCn(normalized, space, cn_cut_fn, cut))
+                sink[std::move(w)] += 1;
+        } else {
+            for (const auto& w : ustr::SplitText(normalized, space, cut))
+                sink[std::string(w)] += 1;
+        }
+    };
+
     auto process_batch = [&]() {
         if (batch.empty()) return;
         if (num_threads <= 1 || batch.size() < 256) {
-            for (const auto& line : batch) {
-                std::string normalized = normalizer.Normalize(line);
-                for (const auto& w : ustr::SplitText(normalized, space, cut))
-                    tokens[std::string(w)] += 1;
-            }
+            for (const auto& line : batch) split_one(line, tokens);
         } else {
             std::vector<std::unordered_map<std::string, int64_t>>
                 local_maps(num_threads);
             std::vector<std::thread> threads;
             for (int t = 0; t < num_threads; ++t) {
                 threads.emplace_back([&, t]() {
-                    for (size_t i = t; i < batch.size(); i += num_threads) {
-                        std::string normalized =
-                            normalizer.Normalize(batch[i]);
-                        for (const auto& w :
-                             ustr::SplitText(normalized, space, cut))
-                            local_maps[t][std::string(w)] += 1;
-                    }
+                    for (size_t i = t; i < batch.size(); i += num_threads)
+                        split_one(batch[i], local_maps[t]);
                 });
             }
             for (auto& t : threads) t.join();

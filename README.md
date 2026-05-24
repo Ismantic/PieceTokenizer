@@ -124,16 +124,49 @@ tok.method                         # → 'bytepiece'
 | `sentencepiece` | SentencePieceCounter | SentencePieceTokenizer | Google SentencePiece BPE 实现 |
 | `bytepiece` | BytePieceCounter | BytePieceTokenizer | 科学空间 BytePiece 实现 |
 
-## CN 模式（仅 `piece` 方法）
+## CN 模式（`piece` 和 `sentencepiece` 方法）
 
-BPE 只看字节共现频率，训练中文时经常把 `▁雨星朋友`、`及北部濒大西` 这种跨词串学进词表。CN 模式通过一个外部 Unigram 词典（`word\tfreq` 的 TSV）先把连续汉字段切成词，BPE 的合并就不会跨越这些词边界。
+BPE 只看字节/字符共现频率，训练中文时经常把 `▁雨星朋友`、`及北部濒大西` 这种跨词串学进词表。CN 模式让你在 BPE/Unigram 合并之前，先对**连续汉字段**做一次预切，把汉字串切成更合理的单位（词或单字），合并就不会跨越这些边界。
 
-- 训练和推理**必须指定同一份词典**，否则行为不一致
-- 只对 `piece` 方法生效；其它方法传了会给 warning
-- 连续汉字段（CJK Unified/Ext 等）进词典 cut，非汉字段（拉丁、数字、标点）按原 `SplitText` 处理，互不干扰
+`--cn-dict` 参数有 **3 种取值**：
+
+| `--cn-dict` 取值 | 行为 | 用途 |
+|---|---|---|
+| 不传 / 空 | **不启用 CN 模式**，整段直接 BPE 合并 | 默认；可能学到中文 N-gram piece |
+| `no`（字面值） | **Per-character 模式**：每个汉字独立成段，BPE 不跨段 → 中文最终都是单字 token | char-level 中文 + EN BPE 混合（适合做 BERT-style backbone / CWS teacher）|
+| `path/to/dict.txt` | **Dict 模式**：用 TSV `word\tfreq` 词典构建 Unigram segmenter，把连续汉字段切成词 | 标准 BPE 训练，BPE 不跨越词边界 |
+
+### 关键约束
+
+- **训练和推理必须用同一份 `--cn-dict` 设置**（包括 `no` / 文件路径）。`piece` 和 `sentencepiece` tokenizer 都会根据 `--cn-dict` 在编码前预切，跟训练对齐
+- 支持 `piece` 和 `sentencepiece` 两种方法；其它方法（`naive` / `bytepiece`）传了会给 warning
+- 连续汉字段（CJK Unified/Ext 等）走 cn 预切，非汉字段（拉丁、数字、标点）按原 `SplitText` 处理，互不干扰
 - 汉字开头**不带空格前缀**（`▁`），空格前缀只贴在紧随其后的非汉字段
 
-词典示例（可以用 [Iscut/dict.txt](https://github.com/tfbao/Iscut)）：
+### Per-character 模式（`--cn-dict no`）
+
+想要"中文按字 + 英文 BPE"组合的最简方式。**词表里不会出现中文 N-gram piece**，所有中文 token 都是单字。
+
+```bash
+# 训练：sentencepiece 推荐，因为它带 character_coverage 保字（默认 0.9995）
+./build/piece-tokenizer count \
+    --method sentencepiece \
+    --input cn_corpus.txt \
+    --vocab-size 16000 \
+    --model output/sp_char \
+    --cn-dict no
+
+# 推理：同样传 --cn-dict no
+echo "GPT-4 model 苹果公司发布新款 iPhone" | ./build/piece-tokenizer tokenize \
+    --model output/sp_char.model --cn-dict no
+# → GPT - 4 ▁model 苹 果 公 司 发 布 新 款 ▁iPhone
+```
+
+`piece` 方法也支持 `--cn-dict no`（行为相同，但用 byte fallback 而非 UNK 兜底罕见字）。
+
+### Dict 模式（`--cn-dict path/to/dict.txt`）
+
+用外部词典做 Unigram 预切（如 [Iscut/dict.txt](https://github.com/tfbao/Iscut)）：
 
 ```
 中国	2041237
@@ -142,7 +175,7 @@ BPE 只看字节共现频率，训练中文时经常把 `▁雨星朋友`、`及
 ...
 ```
 
-训练：
+训练 + 推理：
 
 ```bash
 ./build/piece-tokenizer count \
@@ -150,16 +183,37 @@ BPE 只看字节共现频率，训练中文时经常把 `▁雨星朋友`、`及
     --input corpus.txt \
     --model output/pc \
     --cn-dict path/to/dict.txt
-```
 
-推理（传同一份词典）：
-
-```bash
 echo "Tom 他是英国人Bat" | ./build/piece-tokenizer tokenize \
     --model output/pc.model \
     --cn-dict path/to/dict.txt
-# 输出：T om ▁ 他 是 英国 人 B at
+# → T om ▁ 他 是 英国 人 B at
 ```
+
+### Python 接口
+
+```python
+import piece_tokenizer as pt
+tok = pt.Tokenizer()
+
+# Per-character 模式
+tok.load("sp_char.model", cn_dict="no")
+
+# Dict 模式
+tok.load("pc.model", cn_dict="path/to/dict.txt")
+
+# 不启用 CN 模式
+tok.load("model.model")
+```
+
+### `piece` vs `sentencepiece` 在 CN 模式下的差异
+
+| | `piece` + cn_dict | `sentencepiece` + cn_dict |
+|---|---|---|
+| 罕见字 / OOV 处理 | byte fallback（`<0xE5><0xAB><0xAE>` 3 token）| UNK 或 byte fallback（取决于 vocab）|
+| 字符覆盖 | 按 `--min-count` 砍掉低频字 | `character_coverage` 默认 0.9995 自动保字 |
+| 词表干净度 | vocab 含 256 个 byte piece | vocab 含较少 byte piece（受 coverage 控制）|
+| 推荐场景 | 通用 BPE、需要 byte-fallback 重建 | char-level backbone、需要严格字数控制 |
 
 
 

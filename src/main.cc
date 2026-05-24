@@ -76,9 +76,9 @@ void RunCount(const std::string& method,
 
     for (const auto& t : extra_tokens) counter_spec.add_extra_token(t);
 
-    if (!cn_dict.empty() && method != "piece") {
-        std::cerr << "Warning: --cn-dict is only supported for --method piece; "
-                  << "ignoring for method=" << method << "\n";
+    if (!cn_dict.empty() && method != "piece" && method != "sentencepiece") {
+        std::cerr << "Warning: --cn-dict is only supported for --method piece "
+                  << "or --method sentencepiece; ignoring for method=" << method << "\n";
         counter_spec.set_cn_dict("");
     }
 
@@ -134,9 +134,9 @@ void RunEncode(const std::string& model_file, const std::string& cn_dict) {
     }
 
     const std::string& method = model.GetCounterSpec().method();
-    if (!cn_dict.empty() && method != "piece") {
-        std::cerr << "Warning: --cn-dict is only supported for --method piece; "
-                  << "ignoring for method=" << method << "\n";
+    if (!cn_dict.empty() && method != "piece" && method != "sentencepiece") {
+        std::cerr << "Warning: --cn-dict is only supported for --method piece "
+                  << "or --method sentencepiece; ignoring for method=" << method << "\n";
     }
     std::string line;
     if (method == "naive") {
@@ -188,9 +188,9 @@ void RunTokenize(const std::string& model_file, const std::string& cn_dict) {
     }
 
     const std::string& method = model.GetCounterSpec().method();
-    if (!cn_dict.empty() && method != "piece") {
-        std::cerr << "Warning: --cn-dict is only supported for --method piece; "
-                  << "ignoring for method=" << method << "\n";
+    if (!cn_dict.empty() && method != "piece" && method != "sentencepiece") {
+        std::cerr << "Warning: --cn-dict is only supported for --method piece "
+                  << "or --method sentencepiece; ignoring for method=" << method << "\n";
     }
     std::string line;
     if (method == "naive") {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -9,8 +10,11 @@
 
 #include "common.h"
 #include "normalizer.h"
+#include "ustr.h"
 
 namespace piece {
+
+class CnCutter;
 
 template <class T>
 class FreeList {
@@ -56,7 +60,8 @@ class SentencePieceTokenizer {
 public:
   using StrToInt = std::unordered_map<std::string_view, int>;
 
-  explicit SentencePieceTokenizer(const Model& model);
+  explicit SentencePieceTokenizer(const Model& model,
+                                  const std::string& cn_dict = "");
   ~SentencePieceTokenizer();
 
   int PieceID(std::string_view piece) const;
@@ -66,10 +71,18 @@ public:
   std::string Decode(const EncodeResult& rs) const;
 
 private:
+  // Core Viterbi-BPE encoding on a single segment (no normalize, no split).
+  EncodeResult EncodeSegment(std::string_view text) const;
+
   const Model* model_;
   Normalizer normalizer_;
   StrToInt pieces_;
   int unk_id_;
+  // cn mode: pre-split Han runs to match training (parallel with PieceTokenizer).
+  std::string_view space_;
+  int cut_;
+  std::unique_ptr<CnCutter> cn_cutter_;
+  ustr::CnCutFn cn_cut_fn_;
 };
 
 } // namespace piece

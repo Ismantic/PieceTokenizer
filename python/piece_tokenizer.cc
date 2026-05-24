@@ -35,7 +35,7 @@ public:
         } else if (method_ == "piece") {
             piece_tok_ = std::make_unique<PieceTokenizer>(model_, cn_dict);
         } else if (method_ == "sentencepiece") {
-            sp_tok_ = std::make_unique<SentencePieceTokenizer>(model_);
+            sp_tok_ = std::make_unique<SentencePieceTokenizer>(model_, cn_dict);
         } else if (method_ == "bytepiece") {
             bp_tok_ = std::make_unique<BytePieceTokenizer>(model_);
         } else {
