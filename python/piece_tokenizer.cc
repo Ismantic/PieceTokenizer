@@ -45,10 +45,12 @@ public:
     }
 
     std::vector<std::pair<std::string, int>> Encode(const std::string& text) const {
+        // piece / sentencepiece / bytepiece all normalize internally;
+        // naive does not, so the binding normalizes upstream.
         if (method_ == "naive") {
             return naive_tok_->Encode(normalizer_->Normalize(text));
         } else if (method_ == "piece") {
-            return piece_tok_->Encode(normalizer_->Normalize(text));
+            return piece_tok_->Encode(text);
         } else if (method_ == "sentencepiece") {
             return sp_tok_->Encode(text);
         } else if (method_ == "bytepiece") {
