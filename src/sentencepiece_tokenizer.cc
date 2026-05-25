@@ -13,7 +13,8 @@ SentencePieceTokenizer::SentencePieceTokenizer(const Model& model,
       normalizer_(model.GetNormalizerSpec()),
       unk_id_(-1),
       space_(model.GetNormalizerSpec().GetSpace()),
-      cut_(model.GetNormalizerSpec().GetCut()) {
+      cut_(model.GetNormalizerSpec().GetCut()),
+      split_digits_(model.GetNormalizerSpec().GetSplitDigits()) {
   // cn mode: pre-split Han runs to match training behavior (per-character or dict).
   // When cn_dict is empty, no pre-split happens (default sentencepiece behavior).
   if (cn_dict == "no") {
@@ -28,7 +29,8 @@ SentencePieceTokenizer::SentencePieceTokenizer(const Model& model,
       }
       return out;
     };
-    LOG(INFO) << "SentencePieceTokenizer cn mode enabled (per-character)";
+    LOG(INFO) << "SentencePieceTokenizer cn mode enabled (per-character"
+              << ", cut=" << cut_ << ", split_digits=" << split_digits_ << ")";
   } else if (!cn_dict.empty()) {
     auto dict = LoadCnDict(cn_dict);
     if (!dict.empty()) {
@@ -88,7 +90,7 @@ EncodeResult SentencePieceTokenizer::Encode(std::string_view str) const {
     // cutter-imposed Han word boundaries (matches training behavior).
     EncodeResult result;
     for (const auto& piece :
-         ustr::SplitTextCn(ns, space_, cn_cut_fn_, cut_)) {
+         ustr::SplitTextCn(ns, space_, cn_cut_fn_, cut_, split_digits_)) {
         auto sub = EncodeSegment(piece);
         result.insert(result.end(),
                       std::make_move_iterator(sub.begin()),

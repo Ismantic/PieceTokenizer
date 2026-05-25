@@ -81,6 +81,7 @@ private:
   // cn mode: pre-split Han runs to match training (parallel with PieceTokenizer).
   std::string_view space_;
   int cut_;
+  bool split_digits_;
   std::unique_ptr<CnCutter> cn_cutter_;
   ustr::CnCutFn cn_cut_fn_;
 };

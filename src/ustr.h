@@ -145,6 +145,7 @@ using CnCutFn = std::function<std::vector<std::string>(std::string_view)>;
 std::vector<std::string> SplitTextCn(std::string_view text,
                                      std::string_view space,
                                      const CnCutFn& cn_cut,
-                                     int cut = 0);
+                                     int cut = 0,
+                                     bool split_digits = false);
 
 } // namespace ustr

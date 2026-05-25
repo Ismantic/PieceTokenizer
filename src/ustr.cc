@@ -468,13 +468,15 @@ std::vector<std::string_view> SplitText(std::string_view text,
 std::vector<std::string> SplitTextCn(std::string_view text,
                                      std::string_view space,
                                      const CnCutFn& cn_cut,
-                                     int cut) {
+                                     int cut,
+                                     bool split_digits) {
     std::vector<std::string> result;
     const auto pieces = SplitText(text, space, cut);
 
     // SplitText already splits at Han / non-Han boundaries and peels
     // space prefixes from Han runs. Each piece is either entirely Han
-    // or contains no Han at all. Just pass Han pieces through cn_cut.
+    // or contains no Han at all. Pass Han pieces through cn_cut. When
+    // split_digits is true, also split digit runs into single codepoints.
     for (const auto piece : pieces) {
         if (piece.empty()) continue;
 
@@ -483,6 +485,14 @@ std::vector<std::string> SplitTextCn(std::string_view text,
                                        piece.data() + piece.size(), &mb);
         if (IsHan(cp)) {
             for (auto& w : cn_cut(piece)) result.emplace_back(std::move(w));
+        } else if (split_digits && IsDigitCodepoint(cp)) {
+            const char* p = piece.data();
+            const char* end = p + piece.size();
+            while (p < end) {
+                const int n = std::min<int>(OneUTF8Size(p), end - p);
+                result.emplace_back(p, n);
+                p += n;
+            }
         } else {
             result.emplace_back(piece);
         }

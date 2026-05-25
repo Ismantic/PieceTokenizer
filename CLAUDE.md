@@ -59,11 +59,16 @@ Each Counter implements `Count()` + `Save()`. Each Tokenizer implements `Encode(
 - `Model::Piece` — type enum: NORMAL, UNKNOWN, CONTROL, USER_DEFINED, BYTE, UNUSED. The `u_` and `v_` fields store merge parents (u + v = piece).
 - `piece::float_t` — aliased to `double` in `common.h`, used throughout for scores/weights.
 
-**CN mode** (`cut.h/cc`, `piece` method only) — pre-segments contiguous Han character runs using a Unigram dictionary (TSV `word\tfreq`), preventing BPE merges from crossing word boundaries. Internally wraps `BytePieceTokenizer` for the segmentation. The `--cn-dict` flag must match between training and inference.
+**CN mode** (`--cn-dict`, supported by `piece` and `sentencepiece` methods) — three values:
+- *(omitted/empty)* — disabled; Han runs go through normal BPE merging (may learn cross-word Chinese N-grams).
+- `--cn-dict no` — **char mode**. Han runs are split per-codepoint so BPE cannot merge across them. **Implicitly forces `cut=1` + `split_digits=true`** in the persisted `NormalizerSpec`: digits also split per-codepoint, punctuation/spaces stand alone (no `▁(` prefix), only ASCII-letter runs go through BPE. Designed for char-level backbones / CWS / NER where you want maximum vocab budget for Chinese characters + clean English BPE.
+- `--cn-dict path/to/dict.txt` — **dict mode**. Pre-segments Han runs via a Unigram dictionary (TSV `word\tfreq`), preventing BPE merges from crossing word boundaries. Internally wraps `BytePieceTokenizer` for the segmentation.
+
+The `--cn-dict` flag must match between training and inference. `cut` and `split_digits` are persisted in the model so inference auto-applies them; old models lacking the `split_digits` field decode as `false` (backward-compatible).
 
 **Key supporting modules**:
 - `normalizer.h/cc` — NFKC Unicode normalization via precompiled Trie (`normalization_data.h`)
-- `ustr.h/cc` — UTF-8 encoding/decoding, validation, `SplitText` (space/punct/word segmentation), `SplitTextCn` (CN-mode variant), `IsHan` detection
+- `ustr.h/cc` — UTF-8 encoding/decoding, validation, `SplitText` (space/punct/word segmentation, `cut=0|1`), `SplitTextCn` (CN-mode variant with optional `split_digits` to per-codepoint-split digit runs), `IsHan` detection
 - `darts.h` / `trie.h` — Double-Array Trie used by BytePieceTokenizer and Normalizer
 - `sentence.h/cc` — file I/O (ReadableFile, WritableFile, MultiFileSentenceIterator)
 - `piece_spec.h` — also contains `Escape`/`Unescape` functions for model serialization (hex encoding for invalid UTF-8)

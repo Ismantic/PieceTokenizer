@@ -56,9 +56,19 @@ bool SentencePieceCounter::InitMetaPieces() {
 
 bool SentencePieceCounter::LoadSentences() {
     const uint32_t UNK = counter_spec_.GetUnkUnicode();
+
+    // cn_dict="no" (char mode) forces cut=1 + split_digits=true so that
+    // digits, punctuation, and symbols are kept as single codepoints —
+    // only ASCII-letter runs go through BPE merging. Persist to spec so
+    // inference matches training.
+    if (counter_spec_.cn_dict() == "no") {
+        normalizer_spec_.SetCut(1);
+        normalizer_spec_.SetSplitDigits(true);
+    }
     const Normalizer normalizer(normalizer_spec_);
     const std::string_view space = normalizer_spec_.GetSpace();
     const int cut = normalizer_spec_.GetCut();
+    const bool split_digits = normalizer_spec_.GetSplitDigits();
 
     // Optional cn-mode cutter for Han runs (parallel with piece method).
     // cn_dict="no" → per-character (force Han characters to be single tokens).
@@ -78,7 +88,7 @@ bool SentencePieceCounter::LoadSentences() {
             }
             return out;
         };
-        LOG(INFO) << "cn mode enabled (per-character)";
+        LOG(INFO) << "cn mode enabled (per-character, cut=1, split_digits=true)";
     } else if (!counter_spec_.cn_dict().empty()) {
         auto dict = LoadCnDict(counter_spec_.cn_dict());
         if (dict.empty()) {
@@ -109,7 +119,7 @@ bool SentencePieceCounter::LoadSentences() {
                          std::unordered_map<std::string, int64_t>& sink) {
         const std::string normalized = normalizer.Normalize(line);
         if (cn_cut_fn) {
-            for (auto& w : ustr::SplitTextCn(normalized, space, cn_cut_fn, cut))
+            for (auto& w : ustr::SplitTextCn(normalized, space, cn_cut_fn, cut, split_digits))
                 sink[std::move(w)] += 1;
         } else {
             for (const auto& w : ustr::SplitText(normalized, space, cut))

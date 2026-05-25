@@ -254,11 +254,15 @@ public:
     void SetReconstruct(bool r) { reconstruct_ = r; }
     bool GetReconstruct() const { return reconstruct_; }
 
+    void SetSplitDigits(bool s) { split_digits_ = s; }
+    bool GetSplitDigits() const { return split_digits_; }
+
     void Clear() {
         name_.clear();
         space_.clear();
         cut_ = 0;
         reconstruct_ = false;
+        split_digits_ = false;
     }
 
     std::string AsStr() const {
@@ -267,6 +271,7 @@ public:
         oss << "space=" << Escape(space_) << "\n";
         oss << "cut=" << cut_ << "\n";
         oss << "reconstruct=" << (reconstruct_ ? 1 : 0) << "\n";
+        oss << "split_digits=" << (split_digits_ ? 1 : 0) << "\n";
         return oss.str();
     }
 
@@ -292,6 +297,8 @@ public:
                 cut_ = std::stoi(value);
             } else if (key == "reconstruct") {
                 reconstruct_ = std::stoi(value) != 0;
+            } else if (key == "split_digits") {
+                split_digits_ = std::stoi(value) != 0;
             }
         }
 
@@ -303,6 +310,7 @@ private:
     std::string space_ = "\xe2\x96\x81";
     int cut_ = 0;           // 0: default, 1: split spaces and punctuation independently
     bool reconstruct_ = false;  // true: preserve all spaces (no stripping/merging)
+    bool split_digits_ = false; // true: split digit runs into individual codepoints
 };
 
 class Model {

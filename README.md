@@ -145,7 +145,15 @@ BPE 只看字节/字符共现频率，训练中文时经常把 `▁雨星朋友`
 
 ### Per-character 模式（`--cn-dict no`）
 
-想要"中文按字 + 英文 BPE"组合的最简方式。**词表里不会出现中文 N-gram piece**，所有中文 token 都是单字。
+想要"中文按字 + 英文 BPE"组合的最简方式。
+
+**`--cn-dict no` 隐含 char mode：训练时会强制 `cut=1 + split_digits=true`**（无需用户再传），所以词表里：
+- **汉字** → 全部单字（不会有中文 N-gram piece）
+- **数字** → 全部单 digit（不会有 `2024 / 200` 这类 N-gram）
+- **标点 / 符号** → 单 codepoint，不带空格前缀（不会有 `▁( / ▁《`；空格 `▁` 单立成 token）
+- **英文字母** → 唯一走 BPE 合并的部分（保留 `model / release / Google` 等高频整词）
+
+效果：词表干净对齐 char-level backbone / CWS / NER 场景，词表预算最大化留给中文字 + 英文 BPE。
 
 ```bash
 # 训练：sentencepiece 推荐，因为它带 character_coverage 保字（默认 0.9995）
@@ -157,12 +165,15 @@ BPE 只看字节/字符共现频率，训练中文时经常把 `▁雨星朋友`
     --cn-dict no
 
 # 推理：同样传 --cn-dict no
-echo "GPT-4 model 苹果公司发布新款 iPhone" | ./build/piece-tokenizer tokenize \
+echo "2024年8月,GPT-4 model release 苹果公司新款 iPhone" | \
+    ./build/piece-tokenizer tokenize \
     --model output/sp_char.model --cn-dict no
-# → GPT - 4 ▁model 苹 果 公 司 发 布 新 款 ▁iPhone
+# → 2 0 2 4 年 8 月 , GPT - 4 ▁ model ▁ release ▁ 苹 果 公 司 新 款 ▁ iPhone
 ```
 
 `piece` 方法也支持 `--cn-dict no`（行为相同，但用 byte fallback 而非 UNK 兜底罕见字）。
+
+> **训推一致**：char mode 的 `cut=1 / split_digits=true` 持久化在模型的 `normalizer_spec` 里，推理时自动按训练值走。**老模型**（spec 里没 `split_digits` 字段）会安全降级为 `split_digits=false`，行为完全不变 — 向后兼容。
 
 ### Dict 模式（`--cn-dict path/to/dict.txt`）
 
