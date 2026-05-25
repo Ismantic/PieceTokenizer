@@ -2,21 +2,21 @@ ROOT     := $(shell cd .. && pwd)
 # Auto-detect cmake build dir: build_venv (when build/ is occupied by setuptools) or build
 BIN := $(firstword $(wildcard $(ROOT)/build_venv/piece-tokenizer $(ROOT)/build/piece-tokenizer))
 #CN_INPUT := $(ROOT)/data/cn_sentences.txt
-CN_INPUT :=
-EN_INPUT := $(ROOT)/data/en_sentences.txt
+CN_INPUT := /home/tfbao/Shiyu/Summer/tokenizer_corpus/cn.txt
+#EN_INPUT := $(ROOT)/data/en_sentences.txt
+EN_INPUT := /home/tfbao/Shiyu/Summer/tokenizer_corpus/en.txt
 MODEL_DIR := $(CURDIR)/output
 
 NORMALIZE       := no
-VOCAB_SIZE      := 240000
+VOCAB_SIZE      := 81896
 CPU             := 8
 MAX_SENTENCES   := 0
 MIN_COUNT       := 0
 CUT             := 0
 RECONSTRUCT     := 0
 MAX_PIECE_SIZE  := 0
-#CN_DICT         := dict.txt
-CN_DICT         := no
-EXTRA_TOKENS    :=
+CN_DICT         := ../dict.txt
+EXTRA_TOKENS    := "<pad>,<user>,<assistant>,<system>"
 
 # When CN_DICT is set (e.g. `make piece CN_DICT=/path/to/dict.txt`),
 # the `piece` method enters cn mode and pre-cuts Han runs with a
