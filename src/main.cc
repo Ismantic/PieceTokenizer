@@ -89,7 +89,8 @@ ParseResult ParsePreTokenizerOption(int argc, char* argv[], int* index,
         return ParseResult::kHandled;
     }
     if (option != "--normalize" && option != "--split" &&
-        option != "--digit" && option != "--cut" && option != "--dict" &&
+        option != "--num" && option != "--digit" &&
+        option != "--cut" && option != "--dict" &&
         option != "--cn-dict") {
         return ParseResult::kUnknown;
     }
@@ -105,10 +106,10 @@ ParseResult ParsePreTokenizerOption(int argc, char* argv[], int* index,
             return ParseResult::kError;
         }
         options->cut = std::strcmp(value, "isolate") == 0 ? 1 : 0;
-    } else if (option == "--digit") {
+    } else if (option == "--num" || option == "--digit") {
         if (std::strcmp(value, "keep") != 0 &&
             std::strcmp(value, "split") != 0) {
-            std::cerr << "Error: --digit must be keep or split\n";
+            std::cerr << "Error: " << option << " must be keep or split\n";
             return ParseResult::kError;
         }
         options->split_digits = std::strcmp(value, "split") == 0;
@@ -165,7 +166,7 @@ void PrintUsage(const char* prog) {
               << "\nPretokenize/Raw-count options (PreTokenizer 3 axes):\n"
               << "  --normalize <name>     Normalizer: no|NMT_NFKC|NFKC_CF (default: no)\n"
               << "  --split <word|isolate> Split axis: word=GPT-4-style attach, isolate=spaces/punct standalone (default: word)\n"
-              << "  --digit <keep|split>   Digit axis: keep runs, or split per-codepoint (default: keep)\n"
+              << "  --num <keep|split>     Num axis: keep runs, or split per-codepoint (default: keep)\n"
               << "  --dict <no|file>       Cn axis: no=per-char, TSV(word\\tfreq)=dict, omitted=none\n"
               << "  --cut <0|1>            Alias for --split (0=word, 1=isolate)\n"
               << "  --reconstruct          Preserve all spaces (no stripping/merging)\n"
@@ -215,7 +216,7 @@ bool RunCount(const std::string& method,
     PreTokenizerSpec pretokenizer_spec = MakePreTokenizerSpec(options);
 
     // Single owner of the char-mode policy: dict="no" forces cut=1 +
-    // split_digits=true (= Split isolate + Digit split) for every method
+    // split_digits=true (= Split isolate + Num split) for every method
     // that supports cn mode, so digits/punct/symbols stay single codepoints
     // and only ASCII-letter runs go through BPE. Persisted to the model so
     // inference matches training.

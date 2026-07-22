@@ -2,7 +2,7 @@
 
 BPE/BBPE + BytePiece 的 C++ 实现，多种训练/推理算法，带 Python 绑定。
 
-三段式流水线：**Normalizer**（NFKC）→ **PreTokenizer**（Split / Digit / Cn 三个正交参数）→ **Tokenize**（可训练）。文本格式 `.pt`，可读可编辑，UTF-8 字节回退。
+三段式流水线：**Normalizer**（NFKC）→ **PreTokenizer**（Split / Num / Cn 三个正交参数）→ **Tokenize**（可训练）。文本格式 `.pt`，可读可编辑，UTF-8 字节回退。
 
 ## 构建
 
@@ -36,14 +36,16 @@ echo "897 411"  | ./build/piece-tokenizer decode   --model output/bytepiece.mode
 | 参数 | 取值 | 含义 |
 |---|---|---|
 | `--split` | `word`（默认）/ `isolate` | word=GPT-4 式（`▁` 依附后词，`don't`→`don`+`'t`）；isolate=空格与每个标点各自独立（`don't` 整体保留）|
-| `--digit` | `keep`（默认）/ `split` | 数字串整段 / 逐码点切开 |
+| `--num` | `keep`（默认）/ `split` | 数字串整段 / 逐码点切开 |
 | `--dict` | 空 / `no` / 词典路径 | 连续汉字：不切 / 逐字 / 按词典（见 CN 模式）|
+
+旧参数 `--digit` 和 Python 关键字 `digit=` 继续作为兼容别名支持；新代码建议使用 `--num` 和 `num=`。模型文件仍使用原有的 `split_digits` 字段，因此无需转换已有模型。
 
 ```bash
 S="Hello, World! don't 你好，世界。123abc"
 echo "$S" | ./build/piece-tokenizer pretokenize                  # Hello , ▁World ! ▁don 't ▁ 你好 ， 世界 。 123 abc
 echo "$S" | ./build/piece-tokenizer pretokenize --split isolate  # Hello , ▁ World ! ▁ don't ▁ 你好 ， 世界 。 123 abc
-echo "$S" | ./build/piece-tokenizer pretokenize --digit split    # ... 世界 。 1 2 3 abc
+echo "$S" | ./build/piece-tokenizer pretokenize --num split      # ... 世界 。 1 2 3 abc
 echo "$S" | ./build/piece-tokenizer pretokenize --dict no        # ... ▁ 你 好 ， 世 界 。 123 abc
 ```
 
@@ -58,12 +60,26 @@ echo "$S" | ./build/piece-tokenizer pretokenize --dict no        # ... ▁ 你 �
 | `bytepiece` | Trie 最长匹配 + byte fallback |
 | `naive` | 基础字节级 BPE |
 
+## 与 SentencePiece 的区别
+
+SentencePiece 通常将规范化后的整句文本直接交给 BPE 或 Unigram，由统计模型自行学习子词边界。PieceTokenizer 则采用显式的三阶段流水线：
+
+```text
+Normalizer → PreTokenizer → Tokenizer
+```
+
+其中 `PreTokenizer` 在子词算法之前确定不可跨越的基础边界，并由所有 Counter 和 Tokenizer 共用。它提供三个可以独立组合的维度：`Split` 控制空格、标点和英文缩写的切分方式，`Num` 控制数字串整体保留或逐码点拆分，`Cn` 控制中文不切、逐字切分或按词典分词。
+
+中文词典模式使用 Trie + Viterbi Unigram 对连续汉字预切分，后续 BPE 只能在预切分片段内部合并，从而避免仅因局部共现频率产生跨中文词语的 piece。逐字模式则适合 CWS、NER 或以汉字为基本单位的模型。
+
+`PreTokenizer` 配置会写入模型，训练和推理使用同一套边界规则。相比在 SentencePiece 外部维护额外的中文分词脚本，这种设计将规范化、预切分和子词编码组合成一个可复现的流程；关闭中文预切分后，仍可保留传统的无显式中文词边界方式。SentencePiece 本身能够处理中文，两者的区别在于 PieceTokenizer 原生提供了可选、显式的中文边界约束。
+
 ## CN 模式（`piece` / `sentencepiece`）
 
 BPE 只看共现频率，训练中文时易学出 `▁雨星朋友` 这种跨词串。CN 模式在合并前先对连续汉字预切。**训练和推理必须传同一个 `--dict`**：
 
 - **空** — 不启用，整段进 BPE。
-- **`no`** — 逐字模式：汉字全单字，并隐含强制 `cut=1 + split_digits=true`（= Split=isolate + Digit=split，由 `main.cc` 统一处理），于是中文/数字/标点各占一个 token，只有英文走 BPE。适合 char-level backbone / CWS / NER。
+- **`no`** — 逐字模式：汉字全单字，并隐含强制 `cut=1 + split_digits=true`（= Split=isolate + Num=split，由 `main.cc` 统一处理），于是中文/数字/标点各占一个 token，只有英文走 BPE。适合 char-level backbone / CWS / NER。
 - **词典路径** — 用 TSV `word\tfreq` 词典（Unigram）把汉字切成词，BPE 不跨词。
 
 ```bash
@@ -101,7 +117,7 @@ echo "Tom 他是英国人Bat" | \
 import piece_tokenizer as pt
 
 # 模型无关的预分词（三轴同 CLI）
-pt.PreTokenizer(split='isolate', digit='split', cn='no').tokenize("你好123 hi")
+pt.PreTokenizer(split='isolate', num='split', cn='no').tokenize("你好123 hi")
 # → ['你', '好', '1', '2', '3', '▁', 'hi']
 
 # 加载训练好的模型（dict 需与训练一致）

@@ -18,7 +18,7 @@ namespace piece {
 //
 // Three orthogonal axes, all carried by PreTokenizerSpec + dict:
 //   Split (spec.cut):          word (0, GPT-4-style attach) / isolate (1)
-//   Digit (spec.split_digits): keep / split (per-codepoint)
+//   Num   (spec.split_digits): keep / split (per-codepoint)
 //   Cn    (dict):              none ("") / char ("no") / dict (path)
 // Any combination is valid; the axes never force one another.
 class PreTokenizer {

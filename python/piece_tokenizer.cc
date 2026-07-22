@@ -190,17 +190,17 @@ private:
 };
 
 // Model-free Normalize + Split, exposing the PreTokenizer's three axes:
-//   split ∈ {word, isolate}   digit ∈ {keep, split}   cn ∈ {"", "no", path}
+//   split ∈ {word, isolate}   num ∈ {keep, split}   cn ∈ {"", "no", path}
 class PyPreTokenizer {
 public:
     PyPreTokenizer(const std::string& normalize = "no",
                    const std::string& split = "word",
-                   const std::string& digit = "keep",
+                   const std::string& num = "keep",
                    const std::string& cn = "",
                    bool reconstruct = false) {
         spec_.SetName(normalize);
         spec_.SetCut(split == "isolate" ? 1 : 0);
-        spec_.SetSplitDigits(digit == "split");
+        spec_.SetSplitDigits(num == "split");
         spec_.SetReconstruct(reconstruct);
         tokenizer_ = std::make_unique<piece::PreTokenizer>(spec_, cn);
     }
@@ -221,10 +221,16 @@ PYBIND11_MODULE(piece_tokenizer, m) {
         .def(py::init<const std::string&, const std::string&, const std::string&,
                       const std::string&, bool>(),
              py::arg("normalize") = "no", py::arg("split") = "word",
-             py::arg("digit") = "keep", py::arg("cn") = "",
+             py::arg("num") = "keep", py::arg("cn") = "",
              py::arg("reconstruct") = false,
              "Create a pre-tokenizer (normalize + split). Axes: "
-             "split=word|isolate, digit=keep|split, cn=''|no|<dict path>")
+             "split=word|isolate, num=keep|split, cn=''|no|<dict path>")
+        .def(py::init<const std::string&, const std::string&, const std::string&,
+                      const std::string&, bool>(),
+             py::arg("normalize") = "no", py::arg("split") = "word",
+             py::arg("digit") = "keep", py::arg("cn") = "",
+             py::arg("reconstruct") = false,
+             "Backward-compatible constructor; use num instead of digit")
         .def("tokenize", &PyPreTokenizer::tokenize, py::arg("text"),
              "Pre-tokenize text into tokens");
 
