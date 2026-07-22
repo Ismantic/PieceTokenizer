@@ -90,6 +90,27 @@ public:
         return pieces;
     }
 
+    std::vector<std::pair<py::bytes, int>> EncodeBytes(
+            const std::string& text) const {
+        const auto result = Encode(text);
+        std::vector<std::pair<py::bytes, int>> encoded;
+        encoded.reserve(result.size());
+        for (const auto& [piece, id] : result) {
+            encoded.emplace_back(py::bytes(piece.data(), piece.size()), id);
+        }
+        return encoded;
+    }
+
+    std::vector<py::bytes> EncodeAsPieceBytes(const std::string& text) const {
+        const auto result = Encode(text);
+        std::vector<py::bytes> pieces;
+        pieces.reserve(result.size());
+        for (const auto& [piece, id] : result) {
+            pieces.emplace_back(piece.data(), piece.size());
+        }
+        return pieces;
+    }
+
     std::string Decode(const std::vector<int>& ids) const {
         EnsureLoaded();
         return std::visit([&](const auto& tokenizer) -> std::string {
@@ -212,7 +233,11 @@ PYBIND11_MODULE(piece_tokenizer, m) {
         .def("encode_as_ids", &PyTokenizer::EncodeAsIds, py::arg("text"),
              "Encode text into token ids")
         .def("encode_as_pieces", &PyTokenizer::EncodeAsPieces, py::arg("text"),
-             "Encode text into piece strings")
+             "Encode text into UTF-8 piece strings; byte fragments may raise UnicodeDecodeError")
+        .def("encode_bytes", &PyTokenizer::EncodeBytes, py::arg("text"),
+             "Encode text into (raw piece bytes, id) pairs")
+        .def("encode_as_piece_bytes", &PyTokenizer::EncodeAsPieceBytes,
+             py::arg("text"), "Encode text into raw piece byte strings")
         .def("decode", &PyTokenizer::Decode, py::arg("ids"),
              "Decode token ids back to text")
         .def("piece_to_id", &PyTokenizer::PieceToId, py::arg("piece"),

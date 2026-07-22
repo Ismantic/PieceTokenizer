@@ -117,7 +117,7 @@ bool MapBuilder::DecompileUstrMap(std::string_view blob,
     std::string_view trie_blob, normalized;
     DecodePrecompiledMap(blob, &trie_blob, &normalized);
 
-    Darts::DoubleArray trie;
+    new_darts::DoubleArray<int> trie;
     trie.set_array(const_cast<char*>(trie_blob.data()),
                    trie_blob.size()/trie.unit_size());
     

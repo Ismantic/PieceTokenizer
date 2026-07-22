@@ -1,14 +1,15 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
 #include "common.h"
-#include "darts.h"
-#include "normalizer.h"
 #include "piece_spec.h"
+#include "pretokenizer.h"
+#include "trie.h"
 #include "ustr.h"
 
 namespace piece {
@@ -42,10 +43,11 @@ private:
     };
 
     std::vector<Match> GetMatches(std::string_view text) const;
+    std::vector<std::string> TokenizeSegment(std::string_view text) const;
     void InitTrie(const std::unordered_map<std::string, float_t>& dict);
 
     const Model* model_ = nullptr;
-    Normalizer normalizer_;
+    std::unique_ptr<PreTokenizer> pretokenizer_;
     StrToInt pieces_;
     int unk_id_ = -1;
     new_darts::DoubleArray<int> trie_;

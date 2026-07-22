@@ -109,9 +109,13 @@ tok = pt.Tokenizer()
 tok.load("output/bytepiece.model")
 tok.encode("你好世界")          # → [('你', 897), ('好', 411), ...]
 tok.encode_as_ids("你好世界")   # → [897, 411, ...]
+tok.encode_bytes("😀")          # → [(b'...', id), ...]，精确保留 byte fragment
+tok.encode_as_piece_bytes("😀") # → [b'...', ...]
 tok.decode([897, 411])          # → '你好'
 tok.vocab_size(); tok.method
 ```
+
+Byte-level BPE 的单个 piece 可能只是 UTF-8 字符的一部分，因此不保证能表示为 Python `str`。`encode()`、`encode_as_pieces()` 适用于 UTF-8 完整的 piece；处理任意文本或检查词表时，使用 `encode_bytes()`、`encode_as_piece_bytes()` 和 `id_to_piece_bytes()` 获取无损字节。
 
 ## License
 

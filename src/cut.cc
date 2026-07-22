@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <limits>
 
 #include "common.h"
 
@@ -76,13 +77,79 @@ float_t ComputeFallbackWeight(
 } // namespace
 
 CnCutter::CnCutter(const std::unordered_map<std::string, float_t>& dict)
-    : tokenizer_(std::make_unique<BytePieceTokenizer>(
-          dict, ComputeFallbackWeight(dict))) {}
+    : fallback_weight_(ComputeFallbackWeight(dict)) {
+    float_t total = 0.0;
+    for (const auto& [word, frequency] : dict) total += frequency;
+    const float_t log_total = std::log(total);
+
+    std::vector<std::pair<std::string, float_t>> sorted(dict.begin(), dict.end());
+    std::sort(sorted.begin(), sorted.end());
+    std::vector<const char*> keys;
+    std::vector<int> values;
+    int value = 1;
+    for (const auto& [word, frequency] : sorted) {
+        if (word.empty()) continue;
+        keys.push_back(word.c_str());
+        values.push_back(value);
+        weights_[value++] = std::log(frequency) - log_total;
+    }
+    trie_.build(keys.size(), keys.data(), nullptr, values.data());
+}
 
 CnCutter::~CnCutter() = default;
 
 std::vector<std::string> CnCutter::Cut(std::string_view han_run) const {
-    return tokenizer_->Tokenize(han_run);
+    const int size = static_cast<int>(han_run.size());
+    std::vector<float_t> scores(size + 1,
+        -std::numeric_limits<float_t>::infinity());
+    std::vector<int> routes(size + 1);
+    scores[0] = 0.0;
+    for (int i = 0; i <= size; ++i) routes[i] = i;
+
+    for (const auto& match : GetMatches(han_run)) {
+        const int start = match.end - match.length + 1;
+        const int end = match.end + 1;
+        const float_t score = scores[start] + match.weight;
+        if (score > scores[end]) {
+            scores[end] = score;
+            routes[end] = start;
+        }
+    }
+
+    std::vector<std::string> result;
+    for (int end = size; end > 0;) {
+        const int start = routes[end];
+        result.emplace_back(han_run.substr(start, end - start));
+        end = start;
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
+std::vector<CnCutter::Match> CnCutter::GetMatches(std::string_view text) const {
+    std::vector<Match> matches;
+    const int size = static_cast<int>(text.size());
+    for (int pos = 0; pos < size;) {
+        const int length = static_cast<int>(
+            ustr::UTF8CharLen(static_cast<unsigned char>(text[pos])));
+        if (pos + length <= size) {
+            matches.push_back({pos + length - 1, length, fallback_weight_});
+        }
+
+        constexpr size_t kMaxResults = 16;
+        new_darts::DoubleArray<int>::ResultPair results[kMaxResults];
+        const size_t count = trie_.commonPrefixSearch(
+            text.data() + pos, results, kMaxResults, size - pos);
+        for (size_t i = 0; i < count; ++i) {
+            if (pos + results[i].length <= static_cast<size_t>(size)) {
+                matches.push_back({pos + static_cast<int>(results[i].length) - 1,
+                                   static_cast<int>(results[i].length),
+                                   weights_.at(results[i].value)});
+            }
+        }
+        pos += length;
+    }
+    return matches;
 }
 
 } // namespace piece

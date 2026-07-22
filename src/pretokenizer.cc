@@ -8,7 +8,8 @@ PreTokenizer::PreTokenizer(const PreTokenizerSpec& spec,
       space_(spec.GetSpace()),
       cut_(spec.GetCut()),
       split_digits_(spec.GetSplitDigits()),
-      cn_cut_fn_(MakeCnCut(dict, &cn_cutter_)) {}
+      cn_cut_fn_(MakeCnCut(dict, &cn_cutter_)),
+      valid_(dict.empty() || static_cast<bool>(cn_cut_fn_)) {}
 
 PreTokenizer::~PreTokenizer() = default;
 

@@ -4,7 +4,7 @@
 #include <future>
 
 #include "extra_tokens.h"
-#include "normalizer.h"
+#include "pretokenizer.h"
 
 namespace piece {
 
@@ -144,9 +144,8 @@ bool BytePieceCounter::StreamCountRaw() {
   N_.clear();
   N_.resize(max_piece_count_ + 1);
 
-  const Normalizer normalizer(pretokenizer_spec_);
-  const std::string_view space = pretokenizer_spec_.GetSpace();
-  const int cut = pretokenizer_spec_.GetCut();
+  const PreTokenizer pretokenizer(pretokenizer_spec_);
+  if (!pretokenizer.valid()) return false;
 
   auto iter = MakeIterator();
   size_t line_count = 0;
@@ -158,10 +157,8 @@ bool BytePieceCounter::StreamCountRaw() {
     for (; !iter->done() && lines < kBatchLines; iter->Next(), ++lines) {
       const std::string& line = iter->value();
       if (line.empty()) continue;
-      std::string normalized = normalizer.Normalize(line);
-      for (std::string_view word : ustr::SplitText(normalized, space, cut)) {
-        batch.emplace_back(word);
-      }
+      for (auto& segment : pretokenizer.PreTokenize(line))
+        batch.push_back(std::move(segment));
     }
     return lines;
   };
@@ -377,9 +374,8 @@ BytePieceCounter::Str2Int BytePieceCounter::StreamCountPieces() {
 
   Str2Int total_pieces;
 
-  const Normalizer normalizer(pretokenizer_spec_);
-  const std::string_view space = pretokenizer_spec_.GetSpace();
-  const int cut = pretokenizer_spec_.GetCut();
+  const PreTokenizer pretokenizer(pretokenizer_spec_);
+  if (!pretokenizer.valid()) return {};
 
   auto iter = MakeIterator();
   size_t line_count = 0;
@@ -410,9 +406,8 @@ BytePieceCounter::Str2Int BytePieceCounter::StreamCountPieces() {
       threads.emplace_back([&, begin, end, w]() {
         auto& local_counts = per_thread[w];
         for (size_t idx = begin; idx < end; ++idx) {
-          std::string normalized = normalizer.Normalize(batch[idx]);
-          for (std::string_view word : ustr::SplitText(normalized, space, cut)) {
-            for (const auto& piece : Tokenize(std::string(word))) {
+          for (const auto& segment : pretokenizer.PreTokenize(batch[idx])) {
+            for (const auto& piece : Tokenize(segment)) {
               if (!piece.empty()) local_counts[piece] += 1;
             }
           }

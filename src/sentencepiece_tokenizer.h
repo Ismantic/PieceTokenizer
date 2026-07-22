@@ -9,12 +9,10 @@
 #include <vector>
 
 #include "common.h"
-#include "normalizer.h"
+#include "pretokenizer.h"
 #include "ustr.h"
 
 namespace piece {
-
-class CnCutter;
 
 template <class T>
 class FreeList {
@@ -75,15 +73,9 @@ private:
   EncodeResult EncodeSegment(std::string_view text) const;
 
   const Model* model_;
-  Normalizer normalizer_;
+  PreTokenizer pretokenizer_;
   StrToInt pieces_;
   int unk_id_;
-  // cn mode: pre-split Han runs to match training (parallel with PieceTokenizer).
-  std::string_view space_;
-  int cut_;
-  bool split_digits_;
-  std::unique_ptr<CnCutter> cn_cutter_;
-  ustr::CnCutFn cn_cut_fn_;
 };
 
 } // namespace piece

@@ -37,6 +37,7 @@ public:
   std::vector<std::string> Split(std::string_view normalized) const;
 
   const Normalizer& normalizer() const { return normalizer_; }
+  bool valid() const { return valid_; }
 
 private:
   Normalizer normalizer_;
@@ -45,6 +46,7 @@ private:
   bool split_digits_;
   std::unique_ptr<CnCutter> cn_cutter_;  // owns the dict-mode segmenter
   ustr::CnCutFn cn_cut_fn_;              // empty when Cn=none
+  bool valid_;
 };
 
 }  // namespace piece

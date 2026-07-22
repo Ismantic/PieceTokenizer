@@ -2,7 +2,6 @@
 
 #include <queue>
 
-#include "cut.h"
 #include "piece_spec.h"
 
 namespace piece {
@@ -10,14 +9,8 @@ namespace piece {
 SentencePieceTokenizer::SentencePieceTokenizer(const Model& model,
                                                const std::string& dict)
     : model_(&model),
-      normalizer_(model.GetPreTokenizerSpec()),
-      unk_id_(-1),
-      space_(model.GetPreTokenizerSpec().GetSpace()),
-      cut_(model.GetPreTokenizerSpec().GetCut()),
-      split_digits_(model.GetPreTokenizerSpec().GetSplitDigits()) {
-  // cn mode: pre-split Han runs to match training behavior (Cn axis, built
-  // by the single owner MakeCnCut: ""→none, "no"→per-char, path→dict).
-  cn_cut_fn_ = MakeCnCut(dict, &cn_cutter_);
+      pretokenizer_(model.GetPreTokenizerSpec(), dict),
+      unk_id_(-1) {
 
   for (size_t i = 0; i < model_->PiecesSize(); ++i) {
     const auto& p = model_->GetPieces(i);
@@ -57,15 +50,8 @@ int SentencePieceTokenizer::PieceID(std::string_view piece) const {
 }
 
 EncodeResult SentencePieceTokenizer::Encode(std::string_view str) const {
-    std::string ns = normalizer_.Normalize(str);
-    if (!cn_cut_fn_) {
-        return EncodeSegment(ns);
-    }
-    // cn mode: pre-split with SplitTextCn so BPE merging cannot cross
-    // cutter-imposed Han word boundaries (matches training behavior).
     EncodeResult result;
-    for (const auto& piece :
-         ustr::SplitTextCn(ns, space_, cn_cut_fn_, cut_, split_digits_)) {
+    for (const auto& piece : pretokenizer_.PreTokenize(str)) {
         auto sub = EncodeSegment(piece);
         result.insert(result.end(),
                       std::make_move_iterator(sub.begin()),
@@ -218,7 +204,7 @@ std::string SentencePieceTokenizer::Decode(const std::vector<int>& ids) const {
         }
     }
 
-    return normalizer_.ReplaceSpace(result);
+    return pretokenizer_.normalizer().ReplaceSpace(result);
 }
 
 } // namespace piece

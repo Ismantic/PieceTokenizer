@@ -4,9 +4,8 @@
 #include <thread>
 
 #include "common.h"
-#include "cut.h"
 #include "extra_tokens.h"
-#include "normalizer.h"
+#include "pretokenizer.h"
 
 namespace piece {
 
@@ -60,16 +59,8 @@ bool SentencePieceCounter::LoadSentences() {
 
     // char-mode forcing (cut=1 + split_digits) is applied upstream in
     // main.cc RunCount and persisted in pretokenizer_spec_ before we run.
-    const Normalizer normalizer(pretokenizer_spec_);
-    const std::string_view space = pretokenizer_spec_.GetSpace();
-    const int cut = pretokenizer_spec_.GetCut();
-    const bool split_digits = pretokenizer_spec_.GetSplitDigits();
-
-    // Optional cn-mode cutter for Han runs (Cn axis). Built by the single
-    // owner MakeCnCut: ""→none, "no"→per-char, path→dict.
-    std::unique_ptr<CnCutter> cn_cutter;
-    ustr::CnCutFn cn_cut_fn = MakeCnCut(counter_spec_.dict(), &cn_cutter);
-    if (!counter_spec_.dict().empty() && !cn_cut_fn) return false;
+    const PreTokenizer pretokenizer(pretokenizer_spec_, counter_spec_.dict());
+    if (!pretokenizer.valid()) return false;
 
     // Batch-read + parallel normalize/split + merge into global map.
     LOG(INFO) << "Loading and tokenizing sentences ...";
@@ -86,14 +77,8 @@ bool SentencePieceCounter::LoadSentences() {
 
     auto split_one = [&](const std::string& line,
                          std::unordered_map<std::string, int64_t>& sink) {
-        const std::string normalized = normalizer.Normalize(line);
-        if (cn_cut_fn) {
-            for (auto& w : ustr::SplitTextCn(normalized, space, cn_cut_fn, cut, split_digits))
-                sink[std::move(w)] += 1;
-        } else {
-            for (const auto& w : ustr::SplitText(normalized, space, cut))
-                sink[std::string(w)] += 1;
-        }
+        for (auto& w : pretokenizer.PreTokenize(line))
+            sink[std::move(w)] += 1;
     };
 
     auto process_batch = [&]() {

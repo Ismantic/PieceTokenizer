@@ -6,16 +6,9 @@ namespace piece {
 
 PieceTokenizer::PieceTokenizer(const Model& model, const std::string& dict)
     : model_(&model),
-      normalizer_(model.GetPreTokenizerSpec()),
-      space_(model.GetPreTokenizerSpec().GetSpace()),
-      cut_(model.GetPreTokenizerSpec().GetCut()),
-      split_digits_(model.GetPreTokenizerSpec().GetSplitDigits()) {
+      pretokenizer_(model.GetPreTokenizerSpec(), dict) {
   const auto& counter_spec = model_->GetCounterSpec();
   unk_id_ = counter_spec.unk_id();
-
-  // cn mode (Cn axis), built by the single owner MakeCnCut:
-  // ""→none, "no"→per-char, path→dict.
-  cn_cut_fn_ = MakeCnCut(dict, &cn_cutter_);
 
   for (size_t i = 0; i < model_->PiecesSize(); ++i) {
     const auto& piece = model_->GetPieces(i);
@@ -47,19 +40,9 @@ PieceTokenizer::PieceTokenizer(const Model& model, const std::string& dict)
 PieceTokenizer::~PieceTokenizer() = default;
 
 PieceTokenizer::EncodeResult PieceTokenizer::Encode(std::string_view text) const {
-  std::string normalized = normalizer_.Normalize(text);
-  if (!cn_cut_fn_) {
-    std::vector<int> ids = BuildInitialTokenIds(normalized);
-    GreedyMerge(ids);
-    return TokenIdsToResult(ids);
-  }
-
-  // cn mode: pre-split with SplitTextCn so BPE merging cannot cross
-  // cutter-imposed Han word boundaries (matches training behavior).
   EncodeResult result;
-  for (const auto& piece :
-       ustr::SplitTextCn(normalized, space_, cn_cut_fn_, cut_, split_digits_)) {
-    std::vector<int> ids = BuildInitialTokenIds(piece);
+  for (const auto& segment : pretokenizer_.PreTokenize(text)) {
+    std::vector<int> ids = BuildInitialTokenIds(segment);
     GreedyMerge(ids);
     auto sub = TokenIdsToResult(ids);
     result.insert(result.end(),
@@ -103,7 +86,7 @@ std::string PieceTokenizer::Decode(const std::vector<int>& ids) const {
     }
   }
 
-  return normalizer_.ReplaceSpace(result);
+  return pretokenizer_.normalizer().ReplaceSpace(result);
 }
 
 std::string PieceTokenizer::Decode(const EncodeResult& rs) const {

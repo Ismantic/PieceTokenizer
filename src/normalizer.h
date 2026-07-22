@@ -7,8 +7,6 @@
 #include <string>
 #include <functional>
 
-#include "darts.h"
-
 #include "trie.h"
 
 #include "piece_spec.h"
@@ -56,7 +54,6 @@ private:
   std::pair<std::string_view, int> ProcessTrie(std::string_view input) const;
 
   static constexpr int kMaxTrieResultSize = 32;
-  //std::unique_ptr<Darts::DoubleArray> trie_;
   std::unique_ptr<new_darts::DoubleArray<int>> trie_;
   const char *normalized_ = nullptr; 
 

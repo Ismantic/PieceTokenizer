@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <limits>
 
 namespace piece {
@@ -11,14 +12,14 @@ BytePieceTokenizer::BytePieceTokenizer(
     const std::unordered_map<std::string, float_t>& dict,
     float_t fallback_weight)
     : model_(nullptr),
-      normalizer_(PreTokenizerSpec()),
       fallback_weight_(fallback_weight) {
     InitTrie(dict);
 }
 
 BytePieceTokenizer::BytePieceTokenizer(const Model& model)
     : model_(&model),
-      normalizer_(model.GetPreTokenizerSpec()) {
+      pretokenizer_(std::make_unique<PreTokenizer>(
+          model.GetPreTokenizerSpec())) {
     const auto& counter_spec = model_->GetCounterSpec();
     unk_id_ = counter_spec.unk_id();
 
@@ -86,7 +87,7 @@ std::string BytePieceTokenizer::Decode(const std::vector<int>& ids) const {
         }
     }
 
-    return normalizer_.ReplaceSpace(result);
+    return pretokenizer_->normalizer().ReplaceSpace(result);
 }
 
 std::string BytePieceTokenizer::Decode(const EncodeResult& encoded) const {
@@ -100,9 +101,19 @@ std::string BytePieceTokenizer::Decode(const EncodeResult& encoded) const {
 
 std::vector<std::string> BytePieceTokenizer::Tokenize(
     std::string_view text) const {
-    const std::string normalized = model_ ? normalizer_.Normalize(text)
-                                          : std::string(text);
-    const std::string_view input = normalized;
+    if (!pretokenizer_) return TokenizeSegment(text);
+
+    std::vector<std::string> tokens;
+    for (const auto& segment : pretokenizer_->PreTokenize(text)) {
+        auto sub = TokenizeSegment(segment);
+        tokens.insert(tokens.end(), std::make_move_iterator(sub.begin()),
+                      std::make_move_iterator(sub.end()));
+    }
+    return tokens;
+}
+
+std::vector<std::string> BytePieceTokenizer::TokenizeSegment(
+    std::string_view input) const {
     const float_t inf = std::numeric_limits<float_t>::infinity();
     const int num = input.length();
     std::vector<float_t> scores(num + 1, -inf);

@@ -8,9 +8,8 @@
 #include <vector>
 
 #include "common.h"
-#include "cut.h"
-#include "normalizer.h"
 #include "piece_spec.h"
+#include "pretokenizer.h"
 #include "ustr.h"
 
 namespace piece {
@@ -20,9 +19,6 @@ public:
   using EncodeResult = std::vector<std::pair<std::string, int>>;
   using StrToInt = std::unordered_map<std::string_view, int>;
 
-  // When `dict` is non-empty, Encode pre-splits input with
-  // SplitTextCn (matching cn-mode training) so BPE merging never
-  // crosses cutter-imposed Han word boundaries.
   explicit PieceTokenizer(const Model& model,
                           const std::string& dict = "");
   ~PieceTokenizer();
@@ -45,16 +41,11 @@ private:
   EncodeResult TokenIdsToResult(const std::vector<int>& ids) const;
 
   const Model* model_;
-  Normalizer normalizer_;
+  PreTokenizer pretokenizer_;
   std::unordered_map<std::pair<int, int>, int, PairHash> merge_ranks_;
   StrToInt pieces_;
   int unk_id_;
   int byte_to_id_[256];
-  std::unique_ptr<CnCutter> cn_cutter_;
-  ustr::CnCutFn cn_cut_fn_;
-  std::string space_;
-  int cut_;
-  bool split_digits_;
 };
 
 }  // namespace piece

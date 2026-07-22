@@ -70,7 +70,7 @@ Each Counter implements `Count()` + `Save()`. Each Tokenizer implements `Encode(
 - `Model::Piece` — type enum: NORMAL, UNKNOWN, CONTROL, USER_DEFINED, BYTE, UNUSED. The `u_` and `v_` fields store merge parents (u + v = piece).
 - `piece::float_t` — aliased to `double` in `common.h`, used throughout for scores/weights.
 
-**Pre-tokenization module** (`pretokenizer.h/cc`, class `piece::PreTokenizer`) — the single, non-trainable owner of the Normalize→Split stage, shared by the model-free CLI/Python entry points. Conceptually three orthogonal axes (any combination valid, none forces another), each mapping 1:1 to a persisted field:
+**Pre-tokenization module** (`pretokenizer.h/cc`, class `piece::PreTokenizer`) — the single, non-trainable owner of the Normalize→Split stage, shared by every Counter/Tokenizer and the model-free CLI/Python entry points. Conceptually three orthogonal axes (any combination valid, none forces another), each mapping 1:1 to a persisted field:
 - **Split** `{word, isolate}` = `PreTokenizerSpec.cut` 0/1. word = GPT-4-style (`▁` attaches to the following word/punct run; `don't`→`don`+`'t`); isolate = each `▁` and each punct char standalone (`don't` kept whole). `cut` only affects space/punct — letters/digits/Han stay as runs in both.
 - **Digit** `{keep, split}` = `PreTokenizerSpec.split_digits`. split = digit runs → per-codepoint. Works independently of CN mode.
 - **Cn** `{none, char, dict}` = `dict` `""`/`"no"`/path (the CN mode below).
@@ -80,14 +80,14 @@ Each Counter implements `Count()` + `Save()`. Each Tokenizer implements `Encode(
 **CN mode** (`--dict`, supported by `piece` and `sentencepiece` methods) — three values:
 - *(omitted/empty)* — disabled; Han runs go through normal BPE merging (may learn cross-word Chinese N-grams).
 - `--dict no` — **char mode**. Han runs are split per-codepoint so BPE cannot merge across them. **Implicitly forces `cut=1 + split_digits=true`** in the persisted `PreTokenizerSpec` (i.e. Split=isolate + Digit=split): digits also split per-codepoint, punctuation/spaces stand alone, only ASCII-letter runs go through BPE. This forcing lives in a single place — `main.cc RunCount` — and applies uniformly to both `piece` and `sentencepiece`. Designed for char-level backbones / CWS / NER where you want maximum vocab budget for Chinese characters + clean English BPE.
-- `--dict path/to/dict.txt` — **dict mode**. Pre-segments Han runs via a Unigram dictionary (TSV `word\tfreq`), preventing BPE merges from crossing word boundaries. Internally wraps `BytePieceTokenizer` for the segmentation.
+- `--dict path/to/dict.txt` — **dict mode**. Pre-segments Han runs via an independent Unigram Trie/Viterbi cutter (TSV `word\tfreq`), preventing BPE merges from crossing word boundaries. BytePiece remains a separate tokenizer and has no Chinese-segmentation responsibility.
 
 The `--dict` flag must match between training and inference. `cut` and `split_digits` are persisted in the model so inference auto-applies them; old models lacking the `split_digits` field decode as `false` (backward-compatible).
 
 **Key supporting modules**:
 - `normalizer.h/cc` — NFKC Unicode normalization via precompiled Trie (`normalization_data.h`)
 - `ustr.h/cc` — UTF-8 encoding/decoding, validation, `SplitText` (space/punct/word segmentation, `cut=0|1`), `SplitTextCn` (CN-mode variant with optional `split_digits` to per-codepoint-split digit runs), `IsHan` detection
-- `darts.h` / `trie.h` — Double-Array Trie used by BytePieceTokenizer and Normalizer
+- `trie.h` — Double-Array Trie shared by Normalizer, BytePieceTokenizer, and CnCutter
 - `sentence.h/cc` — file I/O (ReadableFile, WritableFile, MultiFileSentenceIterator)
 - `piece_spec.h` — also contains `Escape`/`Unescape` functions for model serialization (hex encoding for invalid UTF-8)
 - `common.h` — logging infrastructure (`LOG(INFO)`, `LOG(FATAL)` etc.)
@@ -97,7 +97,7 @@ The `--dict` flag must match between training and inference. `cut` and `split_di
 **Test framework** (`test.h/cc`) — lightweight custom framework with auto-registration. Uses gtest-style macros (TEST, EXPECT_EQ, ASSERT_EQ, etc.) but ASSERT macros behave identically to EXPECT (they print and exit, no exception-based flow). Tests are in `tokenizer_test.cc` and `ustr_test.cc`.
 
 **Python bindings** (`python/piece_tokenizer.cc`) — pybind11 wrapper exposing two classes:
-- `Tokenizer` (loads a trained model): `load(model_file, dict="")`, `encode()`, `decode()`, `encode_as_ids()`, `encode_as_pieces()`, `piece_to_id()`, `id_to_piece()`, `id_to_piece_bytes()`, `vocab_size()`, `method`. Pass `dict=` to `load()` to match the training-time CN mode.
+- `Tokenizer` (loads a trained model): `load(model_file, dict="")`, `encode()`, `encode_bytes()`, `decode()`, `encode_as_ids()`, `encode_as_pieces()`, `encode_as_piece_bytes()`, `piece_to_id()`, `id_to_piece()`, `id_to_piece_bytes()`, `vocab_size()`, `method`. Byte-level pieces may be invalid UTF-8 fragments; use the bytes APIs for lossless access. Pass `dict=` to `load()` to match the training-time CN mode.
 - `PreTokenizer(normalize="no", split="word", digit="keep", cn="", reconstruct=False)` — model-free Normalize + split, exposes `tokenize()`. Mirrors the `pretokenize` subcommand. See the three axes below.
 
 ## Language

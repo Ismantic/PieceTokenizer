@@ -6,8 +6,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "bytepiece_tokenizer.h"
 #include "common.h"
+#include "trie.h"
 #include "ustr.h"
 
 namespace piece {
@@ -42,7 +42,17 @@ public:
     std::vector<std::string> Cut(std::string_view han_run) const;
 
 private:
-    std::unique_ptr<BytePieceTokenizer> tokenizer_;
+    struct Match {
+        int end;
+        int length;
+        float_t weight;
+    };
+
+    std::vector<Match> GetMatches(std::string_view text) const;
+
+    new_darts::DoubleArray<int> trie_;
+    std::unordered_map<int, float_t> weights_;
+    float_t fallback_weight_ = -10.0;
 };
 
 } // namespace piece
