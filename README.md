@@ -18,7 +18,8 @@ uv pip install .          # Python 模块（需 Pybind11）
 
 ```bash
 # 数据：下载中英文维基、分句 → cn_sentences.txt / en_sentences.txt
-cd data && make
+cd data
+make PYTHON=python
 
 # 训练：输出 scripts/output/{method}.model
 cd scripts && make bytepiece            # 或 make 训练全部；VOCAB_SIZE=16000 自定义
@@ -28,6 +29,14 @@ echo "你好世界" | ./build/piece-tokenizer tokenize --model output/bytepiece.
 echo "你好世界" | ./build/piece-tokenizer encode   --model output/bytepiece.model
 echo "897 411"  | ./build/piece-tokenizer decode   --model output/bytepiece.model
 ```
+
+数据流程依赖 `datasets` 和 `opencc-python-reimplemented`。例如：
+
+```bash
+python -m pip install datasets opencc-python-reimplemented
+```
+
+`data/Makefile` 会下载完整的 FineWiki 中英文训练集，可能占用较多网络流量、磁盘空间和处理时间；已有语料时可跳过下载，直接覆盖训练脚本的 `CN_INPUT`、`EN_INPUT`。下载数据、中间文本和分句结果均被 Git 忽略。
 
 ## PreTokenizer 三轴
 

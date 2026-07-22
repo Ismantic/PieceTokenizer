@@ -84,6 +84,7 @@ BATCH_SIZE = 1024
 def main() -> None:
     args = parse_args()
     count = 0
+    args.output.parent.mkdir(parents=True, exist_ok=True)
 
     with args.output.open("w", encoding="utf-8") as fout, \
          Pool(args.nproc, initializer=_init_worker, initargs=(args.t2s,)) as pool:
