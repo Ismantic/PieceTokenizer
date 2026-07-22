@@ -16,7 +16,7 @@ uv pip install .
 cd scripts && make bytepiece
 ```
 
-The first two commands configure and build the CLI and tests. Run the test binary after every C++ change; it executes all registered tests. `uv pip install .` builds and installs the optional pybind11 module. The Make target trains one tokenizer; `make` trains all configured methods. Training defaults include machine-specific corpus paths, so override variables such as `CN_INPUT`, `EN_INPUT`, and `VOCAB_SIZE` when needed.
+The first two commands configure and build the CLI and tests. Run the test binary after every C++ change; it executes all registered tests. `uv pip install .` builds and installs the optional pybind11 module. The Make target trains one tokenizer; `make` trains all configured methods. It defaults to the corpora generated under `data/`; variables such as `CN_INPUT`, `EN_INPUT`, `VOCAB_SIZE`, `SPLIT`, `NUM`, and `DICT` can be overridden.
 
 ## Coding Style & Naming Conventions
 

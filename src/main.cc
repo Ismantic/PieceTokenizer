@@ -159,6 +159,8 @@ void PrintUsage(const char* prog) {
               << "  --max-sentences <int>  Max input lines to load (default: 0=unlimited)\n"
               << "  --min-count <int>      Discard tokens with freq < this (default: 32)\n"
               << "  --cut <0|1>            Pre-tokenize mode: 0=default, 1=split spaces/punct independently\n"
+              << "  --split <word|isolate> Split axis (preferred alias for --cut)\n"
+              << "  --num <keep|split>     Num axis (legacy alias: --digit)\n"
               << "  --reconstruct          Preserve all spaces (no stripping/merging)\n"
               << "  --max-piece-size <int> Max bytes per learned piece (default: 18, ~6 CJK chars)\n"
               << "  --dict <file>          Enable CN mode for `piece`/`sentencepiece` using\n"
@@ -188,7 +190,8 @@ bool RunCount(const std::string& method,
               const std::string& model_prefix, int vocab_size,
               const std::string& normalizer_name, int cpu_count,
               int max_sentences, int min_count, int max_piece_size,
-              const std::string& dict, int cut, bool reconstruct,
+              const std::string& dict, int cut, bool split_digits,
+              bool reconstruct,
               const std::vector<std::string>& extra_tokens = {}) {
     CounterSpec counter_spec;
     for (const auto& f : inputs) counter_spec.add_input(f);
@@ -211,6 +214,7 @@ bool RunCount(const std::string& method,
     PreTokenizerOptions options;
     options.normalizer = normalizer_name;
     options.cut = cut;
+    options.split_digits = split_digits;
     options.reconstruct = reconstruct;
     options.dict = dict;
     PreTokenizerSpec pretokenizer_spec = MakePreTokenizerSpec(options);
@@ -362,6 +366,7 @@ int main(int argc, char* argv[]) {
         int min_count = 32;
         int max_piece_size = 18;
         int cut = 0;
+        bool split_digits = false;
         bool reconstruct = false;
         std::string dict;
         std::vector<std::string> extra_tokens;
@@ -395,6 +400,24 @@ int main(int argc, char* argv[]) {
                 dict = argv[++i];
             } else if (std::strcmp(argv[i], "--cut") == 0) {
                 if (!piece::ParseIntegerOption(argc, argv, &i, 0, 1, &cut)) return 1;
+            } else if (std::strcmp(argv[i], "--split") == 0 && i + 1 < argc) {
+                const char* value = argv[++i];
+                if (std::strcmp(value, "word") != 0 &&
+                    std::strcmp(value, "isolate") != 0) {
+                    std::cerr << "Error: --split must be word or isolate\n";
+                    return 1;
+                }
+                cut = std::strcmp(value, "isolate") == 0 ? 1 : 0;
+            } else if ((std::strcmp(argv[i], "--num") == 0 ||
+                        std::strcmp(argv[i], "--digit") == 0) && i + 1 < argc) {
+                const char* option = argv[i];
+                const char* value = argv[++i];
+                if (std::strcmp(value, "keep") != 0 &&
+                    std::strcmp(value, "split") != 0) {
+                    std::cerr << "Error: " << option << " must be keep or split\n";
+                    return 1;
+                }
+                split_digits = std::strcmp(value, "split") == 0;
             } else if (std::strcmp(argv[i], "--reconstruct") == 0) {
                 reconstruct = true;
             } else if (std::strcmp(argv[i], "--extra-tokens") == 0 && i + 1 < argc) {
@@ -413,7 +436,8 @@ int main(int argc, char* argv[]) {
 
         if (!piece::RunCount(method, inputs, model_prefix, vocab_size, normalizer,
                              cpu_count, max_sentences, min_count, max_piece_size,
-                             dict, cut, reconstruct, extra_tokens)) return 1;
+                             dict, cut, split_digits, reconstruct,
+                             extra_tokens)) return 1;
 
     } else if (command == "pretokenize") {
         piece::PreTokenizerOptions options;
