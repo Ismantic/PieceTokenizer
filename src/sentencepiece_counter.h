@@ -23,7 +23,7 @@ public:
   using Sentences = std::vector<Sentence>;
 
   SentencePieceCounter(const CounterSpec& counter_spec,
-          const NormalizerSpec& normalizer_spec);
+          const PreTokenizerSpec& pretokenizer_spec);
   ~SentencePieceCounter();
 
 
@@ -43,7 +43,7 @@ private:
   Sentences sentences_;
 
   CounterSpec counter_spec_;
-  NormalizerSpec normalizer_spec_;
+  PreTokenizerSpec pretokenizer_spec_;
 
   bool InitMetaPieces();
 

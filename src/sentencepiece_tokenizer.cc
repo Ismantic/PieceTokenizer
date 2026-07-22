@@ -10,11 +10,11 @@ namespace piece {
 SentencePieceTokenizer::SentencePieceTokenizer(const Model& model,
                                                const std::string& cn_dict)
     : model_(&model),
-      normalizer_(model.GetNormalizerSpec()),
+      normalizer_(model.GetPreTokenizerSpec()),
       unk_id_(-1),
-      space_(model.GetNormalizerSpec().GetSpace()),
-      cut_(model.GetNormalizerSpec().GetCut()),
-      split_digits_(model.GetNormalizerSpec().GetSplitDigits()) {
+      space_(model.GetPreTokenizerSpec().GetSpace()),
+      cut_(model.GetPreTokenizerSpec().GetCut()),
+      split_digits_(model.GetPreTokenizerSpec().GetSplitDigits()) {
   // cn mode: pre-split Han runs to match training behavior (Cn axis, built
   // by the single owner MakeCnCut: ""→none, "no"→per-char, path→dict).
   cn_cut_fn_ = MakeCnCut(cn_dict, &cn_cutter_);

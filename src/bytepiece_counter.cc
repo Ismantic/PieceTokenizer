@@ -3,14 +3,15 @@
 #include <cmath>
 #include <future>
 
+#include "extra_tokens.h"
 #include "normalizer.h"
 
 namespace piece {
 
 BytePieceCounter::BytePieceCounter(const CounterSpec& counter_spec,
-                                   const NormalizerSpec& normalizer_spec)
+                                   const PreTokenizerSpec& pretokenizer_spec)
     : counter_spec_(counter_spec),
-      normalizer_spec_(normalizer_spec) {
+      pretokenizer_spec_(pretokenizer_spec) {
   InitMetaPieces();
   N_.resize(max_piece_count_ + 1);
 }
@@ -77,18 +78,12 @@ bool BytePieceCounter::Serialize(Model* model) const {
     }
   }
 
-  // Append extra CONTROL tokens
-  for (const auto& token : counter_spec_.extra_tokens()) {
-    auto* p = model->InsertPieces();
-    p->SetPiece(token);
-    p->SetType(Model::Piece::CONTROL);
-    p->SetScore(0.0);
-    ++total;
-  }
   CounterSpec spec = counter_spec_;
   spec.set_vocab_size(total);
   model->SetCounterSpec(spec);
-  model->SetNormalizerSpec(normalizer_spec_);
+  model->SetPreTokenizerSpec(pretokenizer_spec_);
+  // Append extra CONTROL tokens (single owner: dedup + vocab_size sync + pad).
+  InsertExtraTokens(model, counter_spec_.extra_tokens(), /*repoint_pad=*/true);
   return true;
 }
 
@@ -148,9 +143,9 @@ bool BytePieceCounter::StreamCountRaw() {
   N_.clear();
   N_.resize(max_piece_count_ + 1);
 
-  const Normalizer normalizer(normalizer_spec_);
-  const std::string_view space = normalizer_spec_.GetSpace();
-  const int cut = normalizer_spec_.GetCut();
+  const Normalizer normalizer(pretokenizer_spec_);
+  const std::string_view space = pretokenizer_spec_.GetSpace();
+  const int cut = pretokenizer_spec_.GetCut();
 
   auto iter = MakeIterator();
   size_t line_count = 0;
@@ -380,9 +375,9 @@ BytePieceCounter::Str2Int BytePieceCounter::StreamCountPieces() {
 
   Str2Int total_pieces;
 
-  const Normalizer normalizer(normalizer_spec_);
-  const std::string_view space = normalizer_spec_.GetSpace();
-  const int cut = normalizer_spec_.GetCut();
+  const Normalizer normalizer(pretokenizer_spec_);
+  const std::string_view space = pretokenizer_spec_.GetSpace();
+  const int cut = pretokenizer_spec_.GetCut();
 
   auto iter = MakeIterator();
   size_t line_count = 0;

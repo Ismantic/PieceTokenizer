@@ -3,13 +3,14 @@
 #include <algorithm>
 
 #include "cut.h"
+#include "extra_tokens.h"
 
 namespace piece {
 
 PieceCounter::PieceCounter(const CounterSpec& counter_spec,
-                           const NormalizerSpec& normalizer_spec)
+                           const PreTokenizerSpec& pretokenizer_spec)
     : counter_spec_(counter_spec),
-      normalizer_spec_(normalizer_spec) {
+      pretokenizer_spec_(pretokenizer_spec) {
   InitMetaPieces();
 }
 
@@ -141,15 +142,10 @@ bool PieceCounter::Serialize(Model* model) const {
       return false;
     }
   }
-  // Append extra CONTROL tokens at the end of the vocabulary
-  for (const auto& token : counter_spec_.extra_tokens()) {
-    auto* p = model->InsertPieces();
-    p->SetPiece(token);
-    p->SetType(Model::Piece::CONTROL);
-    p->SetScore(0.0);
-  }
   model->SetCounterSpec(counter_spec_);
-  model->SetNormalizerSpec(normalizer_spec_);
+  model->SetPreTokenizerSpec(pretokenizer_spec_);
+  // Append extra CONTROL tokens (single owner: dedup + vocab_size sync + pad).
+  InsertExtraTokens(model, counter_spec_.extra_tokens(), /*repoint_pad=*/true);
   return true;
 }
 
@@ -175,10 +171,10 @@ bool PieceCounter::InitMetaPieces() {
 }
 
 bool PieceCounter::LoadSentences() {
-  const Normalizer normalizer(normalizer_spec_);
-  const std::string_view space = normalizer_spec_.GetSpace();
-  const int cut = normalizer_spec_.GetCut();
-  const bool split_digits = normalizer_spec_.GetSplitDigits();
+  const Normalizer normalizer(pretokenizer_spec_);
+  const std::string_view space = pretokenizer_spec_.GetSpace();
+  const int cut = pretokenizer_spec_.GetCut();
+  const bool split_digits = pretokenizer_spec_.GetSplitDigits();
   const int num_threads = counter_spec_.cpu_count();
   constexpr size_t kBatchSize = 1000000;
 

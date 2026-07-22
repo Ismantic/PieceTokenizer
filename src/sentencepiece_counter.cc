@@ -5,14 +5,15 @@
 
 #include "common.h"
 #include "cut.h"
+#include "extra_tokens.h"
 #include "normalizer.h"
 
 namespace piece {
 
 SentencePieceCounter::SentencePieceCounter(const CounterSpec &counter_spec,
-                 const NormalizerSpec &normalizer_spec)
+                 const PreTokenizerSpec &pretokenizer_spec)
     : counter_spec_(counter_spec),
-      normalizer_spec_(normalizer_spec) {
+      pretokenizer_spec_(pretokenizer_spec) {
     InitMetaPieces();
 }
 
@@ -58,11 +59,11 @@ bool SentencePieceCounter::LoadSentences() {
     const uint32_t UNK = counter_spec_.GetUnkUnicode();
 
     // char-mode forcing (cut=1 + split_digits) is applied upstream in
-    // main.cc RunCount and persisted in normalizer_spec_ before we run.
-    const Normalizer normalizer(normalizer_spec_);
-    const std::string_view space = normalizer_spec_.GetSpace();
-    const int cut = normalizer_spec_.GetCut();
-    const bool split_digits = normalizer_spec_.GetSplitDigits();
+    // main.cc RunCount and persisted in pretokenizer_spec_ before we run.
+    const Normalizer normalizer(pretokenizer_spec_);
+    const std::string_view space = pretokenizer_spec_.GetSpace();
+    const int cut = pretokenizer_spec_.GetCut();
+    const bool split_digits = pretokenizer_spec_.GetSplitDigits();
 
     // Optional cn-mode cutter for Han runs (Cn axis). Built by the single
     // owner MakeCnCut: ""→none, "no"→per-char, path→dict.
@@ -520,15 +521,10 @@ bool SentencePieceCounter::Serialize(Model* model) const {
         }
     }
 
-    // Append extra CONTROL tokens
-    for (const auto& token : counter_spec_.extra_tokens()) {
-        auto* p = model->InsertPieces();
-        p->SetPiece(token);
-        p->SetType(Model::Piece::CONTROL);
-        p->SetScore(0.0);
-    }
     model->SetCounterSpec(counter_spec_);
-    model->SetNormalizerSpec(normalizer_spec_);
+    model->SetPreTokenizerSpec(pretokenizer_spec_);
+    // Append extra CONTROL tokens (single owner: dedup + vocab_size sync + pad).
+    InsertExtraTokens(model, counter_spec_.extra_tokens(), /*repoint_pad=*/true);
 
     return true;
 }

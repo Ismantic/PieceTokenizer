@@ -132,7 +132,8 @@ public:
     int32_t bos_id() const { return bos_id_; }
     int32_t eos_id() const { return eos_id_; }
     int32_t pad_id() const { return pad_id_; }
-    
+    void set_pad_id(int32_t id) { pad_id_ = id; }
+
     const std::string& unk_piece() const { return unk_piece_; }
     const std::string& bos_piece() const { return bos_piece_; }
     const std::string& eos_piece() const { return eos_piece_; }
@@ -237,9 +238,9 @@ public:
     }
 };
 
-class NormalizerSpec {
+class PreTokenizerSpec {
 public:
-    NormalizerSpec() = default;
+    PreTokenizerSpec() = default;
 
     void SetName(const std::string& name) { name_ = name; }
 
@@ -384,15 +385,15 @@ public:
     bool HasCounterSpec() const { return true; }
     
     // Normalizer spec
-    void SetNormalizerSpec(const NormalizerSpec& spec) { normalizer_spec_ = spec; }
-    const NormalizerSpec& GetNormalizerSpec() const { return normalizer_spec_; }
-    NormalizerSpec* GetMutableNormalizerSpec() { return &normalizer_spec_; }
-    bool HasNormalizerSpec() const { return true; }
+    void SetPreTokenizerSpec(const PreTokenizerSpec& spec) { pretokenizer_spec_ = spec; }
+    const PreTokenizerSpec& GetPreTokenizerSpec() const { return pretokenizer_spec_; }
+    PreTokenizerSpec* GetMutablePreTokenizerSpec() { return &pretokenizer_spec_; }
+    bool HasPreTokenizerSpec() const { return true; }
     
     void Clear() {
         pieces_.clear();
         counter_spec_.Clear();
-        normalizer_spec_.Clear();
+        pretokenizer_spec_.Clear();
     }
 
 
@@ -403,8 +404,8 @@ public:
         oss << counter_spec_.AsStr();
         oss << "\n";
     
-        oss << "[NormalizerSpec]\n";
-        oss << normalizer_spec_.AsStr();
+        oss << "[PreTokenizerSpec]\n";
+        oss << pretokenizer_spec_.AsStr();
         oss << "\n";
     
         oss << "[Pieces]\n";
@@ -428,7 +429,7 @@ public:
         std::string line;
         std::string section;
         std::string counter_spec_str;
-        std::string normalizer_spec_str;
+        std::string pretokenizer_spec_str;
     
         Clear();
     
@@ -444,8 +445,9 @@ public:
     
             if (section == "CounterSpec") {
                 counter_spec_str += line + "\n";
-            } else if (section == "NormalizerSpec") {
-                normalizer_spec_str += line + "\n";
+            } else if (section == "PreTokenizerSpec" ||
+                       section == "NormalizerSpec") {  // old-model header
+                pretokenizer_spec_str += line + "\n";
             } else if (section == "Pieces") {
                 if (line.find("size=") == 0) {
                     pieces_size = std::stoul(line.substr(5));
@@ -505,7 +507,7 @@ public:
         }
     
         if (!counter_spec_.FromStr(counter_spec_str) ||
-            !normalizer_spec_.FromStr(normalizer_spec_str)) {
+            !pretokenizer_spec_.FromStr(pretokenizer_spec_str)) {
                 return false;
         }
     
@@ -550,7 +552,7 @@ public:
 private:
     std::vector<Piece> pieces_;
     CounterSpec counter_spec_;
-    NormalizerSpec normalizer_spec_;
+    PreTokenizerSpec pretokenizer_spec_;
 };
 
 

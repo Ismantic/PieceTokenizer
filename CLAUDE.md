@@ -26,7 +26,7 @@ There is no way to run a single test — the custom test framework runs all regi
 
 ## CLI Usage
 
-The built binary is `./build/piece-tokenizer` with six subcommands:
+The built binary is `./build/piece-tokenizer` with seven subcommands:
 
 ```bash
 # Train a model
@@ -40,6 +40,9 @@ echo "231 192" | ./build/piece-tokenizer decode --model output/bp.model
 # Model-free utilities (no .model needed — just Normalize + PreTokenizer split)
 echo "text" | ./build/piece-tokenizer pretokenize --split word --digit keep --cn-dict no   # print pre-tokens
 ./build/piece-tokenizer raw-count --input corpus.txt --split isolate --output raw_count.txt   # pretokenize then emit word\tfreq (freq-desc)
+
+# Append extra CONTROL tokens to a trained model (post-hoc, no retrain)
+./build/piece-tokenizer insert-tokens --model output/bp.model --extra-tokens "<pad>,<user>,<assistant>" --output output/bp_v2.model
 ```
 
 Training with `scripts/Makefile`: `cd scripts && make bytepiece` (or `make` for all methods). Configurable via `VOCAB_SIZE`, `CPU`, `MIN_COUNT` etc.
@@ -60,21 +63,23 @@ Each Counter implements `Count()` + `Save()`. Each Tokenizer implements `Encode(
 
 **Vocab size adjustment** — `main.cc` adds implicit tokens before passing to counters: `piece` adds +3 (control tokens), `sentencepiece`/`bytepiece` add +256+3 (byte tokens + control), `naive` adds nothing.
 
+**Extra tokens** (`extra_tokens.h/cc`, `InsertExtraTokens(Model*, tokens, repoint_pad)`) — the single owner of "append extra CONTROL tokens (score 0) at the end of the vocab". Used by both the training counters (via `--extra-tokens`, which stores them in `CounterSpec.extra_tokens` as provenance) and the post-hoc `insert-tokens` subcommand. Semantics: dedup (skip tokens already present), sync `CounterSpec.vocab_size` to the final piece count, and repoint `pad_id` to `pad_piece` when pad was disabled (`pad_id<0`) and is now present. The `insert-tokens` subcommand replaced the old `scripts/add_extra_tokens.py` text-surgery script (it produces byte-identical output but shares the counters' code path, so the two can't drift).
+
 **Core types** (`piece_spec.h`):
-- `Model` — vocabulary (pieces with scores/types) + `CounterSpec` + `NormalizerSpec`. Serialized as a human-readable text `.model` file with `[CounterSpec]`, `[NormalizerSpec]`, `[Pieces]` sections (tab-separated fields: index, piece, score, type, u, v).
+- `Model` — vocabulary (pieces with scores/types) + `CounterSpec` + `PreTokenizerSpec` (the config for the whole Normalize+Split stage: name/space/reconstruct + cut/split_digits). Serialized as a human-readable text `.model` file with `[CounterSpec]`, `[PreTokenizerSpec]`, `[Pieces]` sections (tab-separated fields: index, piece, score, type, u, v). The section header was renamed from `[NormalizerSpec]`; the parser still accepts the old header, so pre-rename models load unchanged.
 - `Model::Piece` — type enum: NORMAL, UNKNOWN, CONTROL, USER_DEFINED, BYTE, UNUSED. The `u_` and `v_` fields store merge parents (u + v = piece).
 - `piece::float_t` — aliased to `double` in `common.h`, used throughout for scores/weights.
 
 **Pre-tokenization module** (`pretokenizer.h/cc`, class `piece::PreTokenizer`) — the single, non-trainable owner of the Normalize→Split stage, shared by the model-free CLI/Python entry points. Conceptually three orthogonal axes (any combination valid, none forces another), each mapping 1:1 to a persisted field:
-- **Split** `{word, isolate}` = `NormalizerSpec.cut` 0/1. word = GPT-4-style (`▁` attaches to the following word/punct run; `don't`→`don`+`'t`); isolate = each `▁` and each punct char standalone (`don't` kept whole). `cut` only affects space/punct — letters/digits/Han stay as runs in both.
-- **Digit** `{keep, split}` = `NormalizerSpec.split_digits`. split = digit runs → per-codepoint. Works independently of CN mode.
+- **Split** `{word, isolate}` = `PreTokenizerSpec.cut` 0/1. word = GPT-4-style (`▁` attaches to the following word/punct run; `don't`→`don`+`'t`); isolate = each `▁` and each punct char standalone (`don't` kept whole). `cut` only affects space/punct — letters/digits/Han stay as runs in both.
+- **Digit** `{keep, split}` = `PreTokenizerSpec.split_digits`. split = digit runs → per-codepoint. Works independently of CN mode.
 - **Cn** `{none, char, dict}` = `cn_dict` `""`/`"no"`/path (the CN mode below).
 
 `ustr::SplitTextCn` is the single split covering every combination (empty `cn_cut` = Cn none); `MakeCnCut` in `cut.h/cc` is the single builder of the CN cut function, reused by both `piece` and `sentencepiece` counters+tokenizers.
 
 **CN mode** (`--cn-dict`, supported by `piece` and `sentencepiece` methods) — three values:
 - *(omitted/empty)* — disabled; Han runs go through normal BPE merging (may learn cross-word Chinese N-grams).
-- `--cn-dict no` — **char mode**. Han runs are split per-codepoint so BPE cannot merge across them. **Implicitly forces `cut=1` + `split_digits=true`** in the persisted `NormalizerSpec` (i.e. Split=isolate + Digit=split): digits also split per-codepoint, punctuation/spaces stand alone, only ASCII-letter runs go through BPE. This forcing lives in a single place — `main.cc RunCount` — and applies uniformly to both `piece` and `sentencepiece`. Designed for char-level backbones / CWS / NER where you want maximum vocab budget for Chinese characters + clean English BPE.
+- `--cn-dict no` — **char mode**. Han runs are split per-codepoint so BPE cannot merge across them. **Implicitly forces `cut=1` + `split_digits=true`** in the persisted `PreTokenizerSpec` (i.e. Split=isolate + Digit=split): digits also split per-codepoint, punctuation/spaces stand alone, only ASCII-letter runs go through BPE. This forcing lives in a single place — `main.cc RunCount` — and applies uniformly to both `piece` and `sentencepiece`. Designed for char-level backbones / CWS / NER where you want maximum vocab budget for Chinese characters + clean English BPE.
 - `--cn-dict path/to/dict.txt` — **dict mode**. Pre-segments Han runs via a Unigram dictionary (TSV `word\tfreq`), preventing BPE merges from crossing word boundaries. Internally wraps `BytePieceTokenizer` for the segmentation.
 
 The `--cn-dict` flag must match between training and inference. `cut` and `split_digits` are persisted in the model so inference auto-applies them; old models lacking the `split_digits` field decode as `false` (backward-compatible).
@@ -87,7 +92,7 @@ The `--cn-dict` flag must match between training and inference. `cut` and `split
 - `piece_spec.h` — also contains `Escape`/`Unescape` functions for model serialization (hex encoding for invalid UTF-8)
 - `common.h` — logging infrastructure (`LOG(INFO)`, `LOG(FATAL)` etc.)
 
-**Space symbol** — `▁` (U+2581, `\xE2\x96\x81`) is the word-boundary marker, stored in `NormalizerSpec::space_`. SplitText attaches it as a prefix to following tokens.
+**Space symbol** — `▁` (U+2581, `\xE2\x96\x81`) is the word-boundary marker, stored in `PreTokenizerSpec::space_`. SplitText attaches it as a prefix to following tokens.
 
 **Test framework** (`test.h/cc`) — lightweight custom framework with auto-registration. Uses gtest-style macros (TEST, EXPECT_EQ, ASSERT_EQ, etc.) but ASSERT macros behave identically to EXPECT (they print and exit, no exception-based flow). Tests are in `tokenizer_test.cc` and `ustr_test.cc`.
 

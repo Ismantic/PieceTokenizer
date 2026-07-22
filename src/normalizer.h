@@ -38,7 +38,7 @@ public:
 
 class Normalizer {
 public:
-  explicit Normalizer(const NormalizerSpec &spec);
+  explicit Normalizer(const PreTokenizerSpec &spec);
   virtual ~Normalizer();
 
   bool Normalize(std::string_view input,
@@ -60,7 +60,7 @@ private:
   std::unique_ptr<new_darts::DoubleArray<int>> trie_;
   const char *normalized_ = nullptr; 
 
-  const NormalizerSpec* spec_;
+  const PreTokenizerSpec* spec_;
   std::string map_data_;
 
 };

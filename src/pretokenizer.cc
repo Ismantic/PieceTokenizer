@@ -2,7 +2,7 @@
 
 namespace piece {
 
-PreTokenizer::PreTokenizer(const NormalizerSpec& spec,
+PreTokenizer::PreTokenizer(const PreTokenizerSpec& spec,
                            const std::string& cn_dict)
     : normalizer_(spec),
       space_(spec.GetSpace()),

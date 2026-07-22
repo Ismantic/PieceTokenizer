@@ -71,7 +71,7 @@ TEST(BytePieceTokenizerTest, FallsBackToCharacterBoundaries) {
 }
 
 TEST(NormalizerTest, NmtNfkcNormalizesCompatibilityChars) {
-    piece::NormalizerSpec spec;
+    piece::PreTokenizerSpec spec;
     spec.SetName("NMT_NFKC");
 
     piece::Normalizer normalizer(spec);

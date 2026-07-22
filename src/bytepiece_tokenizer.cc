@@ -11,14 +11,14 @@ BytePieceTokenizer::BytePieceTokenizer(
     const std::unordered_map<std::string, float_t>& dict,
     float_t fallback_weight)
     : model_(nullptr),
-      normalizer_(NormalizerSpec()),
+      normalizer_(PreTokenizerSpec()),
       fallback_weight_(fallback_weight) {
     InitTrie(dict);
 }
 
 BytePieceTokenizer::BytePieceTokenizer(const Model& model)
     : model_(&model),
-      normalizer_(model.GetNormalizerSpec()) {
+      normalizer_(model.GetPreTokenizerSpec()) {
     const auto& counter_spec = model_->GetCounterSpec();
     unk_id_ = counter_spec.unk_id();
 

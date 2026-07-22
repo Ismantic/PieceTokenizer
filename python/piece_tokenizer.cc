@@ -27,8 +27,8 @@ public:
         }
         method_ = model_.GetCounterSpec().method();
 
-        const auto& normalizer_spec = model_.GetNormalizerSpec();
-        normalizer_ = std::make_unique<Normalizer>(normalizer_spec);
+        const auto& pretokenizer_spec = model_.GetPreTokenizerSpec();
+        normalizer_ = std::make_unique<Normalizer>(pretokenizer_spec);
 
         if (method_ == "naive") {
             naive_tok_ = std::make_unique<NaiveTokenizer>(model_);
@@ -164,7 +164,7 @@ public:
     }
 
 private:
-    NormalizerSpec spec_;
+    PreTokenizerSpec spec_;
     std::unique_ptr<piece::PreTokenizer> tokenizer_;
 };
 

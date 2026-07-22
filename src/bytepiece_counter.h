@@ -16,7 +16,7 @@ namespace piece {
 class BytePieceCounter {
 public:
     BytePieceCounter(const CounterSpec& counter_spec,
-                   const NormalizerSpec& normalizer_spec);
+                   const PreTokenizerSpec& pretokenizer_spec);
     ~BytePieceCounter();
     
     bool Count();
@@ -48,7 +48,7 @@ private:
     std::map<int, std::pair<std::string, Model::Piece::Type>> meta_pieces_;
     std::vector<std::pair<std::string, float>> pieces_;
     CounterSpec counter_spec_;
-    NormalizerSpec normalizer_spec_;
+    PreTokenizerSpec pretokenizer_spec_;
     
     static constexpr size_t max_piece_count_ = 6;
     static constexpr float_t INF = std::numeric_limits<float_t>::infinity();

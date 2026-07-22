@@ -195,7 +195,7 @@ echo "2024年8月,GPT-4 model release 苹果公司新款 iPhone" | \
 
 `piece` 方法也支持 `--cn-dict no`（行为相同，但用 byte fallback 而非 UNK 兜底罕见字）。
 
-> **训推一致**：char mode 的 `cut=1 / split_digits=true` 持久化在模型的 `normalizer_spec` 里，推理时自动按训练值走。**老模型**（spec 里没 `split_digits` 字段）会安全降级为 `split_digits=false`，行为完全不变 — 向后兼容。
+> **训推一致**：char mode 的 `cut=1 / split_digits=true` 持久化在模型的 `PreTokenizerSpec`（旧名 normalizer_spec，段头兼容）里，推理时自动按训练值走。**老模型**（spec 里没 `split_digits` 字段）会安全降级为 `split_digits=false`，行为完全不变 — 向后兼容。
 
 ### Dict 模式（`--cn-dict path/to/dict.txt`）
 

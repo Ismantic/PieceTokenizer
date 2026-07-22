@@ -179,7 +179,7 @@ bool MapBuilder::GetPrecompiledUstrMap(std::string_view name,
     return false;
 }
 
-Normalizer::Normalizer(const NormalizerSpec& spec)
+Normalizer::Normalizer(const PreTokenizerSpec& spec)
     : spec_(&spec) {
         Init();
 }

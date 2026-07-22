@@ -6,10 +6,10 @@ namespace piece {
 
 PieceTokenizer::PieceTokenizer(const Model& model, const std::string& cn_dict)
     : model_(&model),
-      normalizer_(model.GetNormalizerSpec()),
-      space_(model.GetNormalizerSpec().GetSpace()),
-      cut_(model.GetNormalizerSpec().GetCut()),
-      split_digits_(model.GetNormalizerSpec().GetSplitDigits()) {
+      normalizer_(model.GetPreTokenizerSpec()),
+      space_(model.GetPreTokenizerSpec().GetSpace()),
+      cut_(model.GetPreTokenizerSpec().GetCut()),
+      split_digits_(model.GetPreTokenizerSpec().GetSplitDigits()) {
   const auto& counter_spec = model_->GetCounterSpec();
   unk_id_ = counter_spec.unk_id();
 

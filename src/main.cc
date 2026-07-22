@@ -16,8 +16,28 @@
 #include "bytepiece_tokenizer.h"
 #include "normalizer.h"
 #include "pretokenizer.h"
+#include "extra_tokens.h"
 
 namespace piece {
+
+// Parse a comma-separated --extra-tokens value. Tolerates a stray pair of
+// surrounding shell quotes around the whole value (e.g. Makefile double-quoting
+// like --extra-tokens '"<pad>,<user>"') so the quote chars don't leak into the
+// token strings. Skips empty entries.
+std::vector<std::string> ParseExtraTokens(const char* arg) {
+    std::string val(arg);
+    if (val.size() >= 2 && (val.front() == '"' || val.front() == '\'') &&
+        val.back() == val.front()) {
+        val = val.substr(1, val.size() - 2);
+    }
+    std::vector<std::string> out;
+    std::istringstream ts(val);
+    std::string token;
+    while (std::getline(ts, token, ',')) {
+        if (!token.empty()) out.push_back(token);
+    }
+    return out;
+}
 
 void PrintUsage(const char* prog) {
     std::cerr << "Usage:\n"
@@ -27,6 +47,7 @@ void PrintUsage(const char* prog) {
               << "  " << prog << " tokenize --model <file>\n"
               << "  " << prog << " encode --model <file>\n"
               << "  " << prog << " decode --model <file>\n"
+              << "  " << prog << " insert-tokens --model <file> --extra-tokens <a,b,c> --output <file>\n"
               << "\nCount options:\n"
               << "  --method <naive|piece|sentencepiece|bytepiece>  (default: bytepiece)\n"
               << "  --input <file>         Input corpus file\n"
@@ -86,10 +107,10 @@ void RunCount(const std::string& method,
         counter_spec.set_cn_dict("");
     }
 
-    NormalizerSpec normalizer_spec;
-    normalizer_spec.SetName(normalizer_name);
-    normalizer_spec.SetCut(cut);
-    normalizer_spec.SetReconstruct(reconstruct);
+    PreTokenizerSpec pretokenizer_spec;
+    pretokenizer_spec.SetName(normalizer_name);
+    pretokenizer_spec.SetCut(cut);
+    pretokenizer_spec.SetReconstruct(reconstruct);
 
     // Single owner of the char-mode policy: cn_dict="no" forces cut=1 +
     // split_digits=true (= Split isolate + Digit split) for every method
@@ -97,8 +118,8 @@ void RunCount(const std::string& method,
     // and only ASCII-letter runs go through BPE. Persisted to the model so
     // inference matches training.
     if (counter_spec.cn_dict() == "no") {
-        normalizer_spec.SetCut(1);
-        normalizer_spec.SetSplitDigits(true);
+        pretokenizer_spec.SetCut(1);
+        pretokenizer_spec.SetSplitDigits(true);
     }
 
     // Adjust vocab_size for byte tokens and control tokens
@@ -121,15 +142,15 @@ void RunCount(const std::string& method,
         counter.Count();
         counter.Save();
     } else if (method == "piece") {
-        PieceCounter counter(counter_spec, normalizer_spec);
+        PieceCounter counter(counter_spec, pretokenizer_spec);
         counter.Count();
         counter.Save();
     } else if (method == "sentencepiece") {
-        SentencePieceCounter counter(counter_spec, normalizer_spec);
+        SentencePieceCounter counter(counter_spec, pretokenizer_spec);
         counter.Count();
         counter.Save();
     } else if (method == "bytepiece") {
-        BytePieceCounter counter(counter_spec, normalizer_spec);
+        BytePieceCounter counter(counter_spec, pretokenizer_spec);
         counter.Count();
         counter.Save();
     } else {
@@ -362,11 +383,7 @@ int main(int argc, char* argv[]) {
             } else if (std::strcmp(argv[i], "--reconstruct") == 0) {
                 reconstruct = true;
             } else if (std::strcmp(argv[i], "--extra-tokens") == 0 && i + 1 < argc) {
-                std::istringstream ts(argv[++i]);
-                std::string token;
-                while (std::getline(ts, token, ',')) {
-                    if (!token.empty()) extra_tokens.push_back(token);
-                }
+                extra_tokens = piece::ParseExtraTokens(argv[++i]);
             } else {
                 std::cerr << "Unknown option: " << argv[i] << "\n";
                 piece::PrintUsage(argv[0]);
@@ -421,7 +438,7 @@ int main(int argc, char* argv[]) {
             std::cin.rdbuf(file_in.rdbuf());
         }
 
-        piece::NormalizerSpec spec;
+        piece::PreTokenizerSpec spec;
         spec.SetName(normalizer);
         spec.SetCut(cut);
         spec.SetSplitDigits(split_digits);
@@ -474,7 +491,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        piece::NormalizerSpec spec;
+        piece::PreTokenizerSpec spec;
         spec.SetName(normalizer);
         spec.SetCut(cut);
         spec.SetSplitDigits(split_digits);
@@ -537,6 +554,45 @@ int main(int argc, char* argv[]) {
 
         std::cerr << "Done! " << line_count << " lines, "
                   << sorted.size() << " unique tokens\n";
+
+    } else if (command == "insert-tokens") {
+        std::string model_file;
+        std::string output_file;
+        std::vector<std::string> tokens;
+
+        for (int i = 2; i < argc; i++) {
+            if (std::strcmp(argv[i], "--model") == 0 && i + 1 < argc) {
+                model_file = argv[++i];
+            } else if (std::strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
+                output_file = argv[++i];
+            } else if (std::strcmp(argv[i], "--extra-tokens") == 0 && i + 1 < argc) {
+                tokens = piece::ParseExtraTokens(argv[++i]);
+            } else {
+                std::cerr << "Unknown option: " << argv[i] << "\n";
+                piece::PrintUsage(argv[0]);
+                return 1;
+            }
+        }
+
+        if (model_file.empty() || output_file.empty() || tokens.empty()) {
+            std::cerr << "insert-tokens requires --model, --output, and --extra-tokens\n";
+            return 1;
+        }
+
+        piece::Model model;
+        if (!model.Load(model_file)) {
+            std::cerr << "Error: cannot load model: " << model_file << "\n";
+            return 1;
+        }
+        const size_t before = model.PiecesSize();
+        const int added = piece::InsertExtraTokens(&model, tokens, /*repoint_pad=*/true);
+        if (!model.Save(output_file)) {
+            std::cerr << "Error: cannot save model: " << output_file << "\n";
+            return 1;
+        }
+        std::cerr << "insert-tokens: " << model_file << " (" << before
+                  << " pieces) -> " << output_file << " (" << model.PiecesSize()
+                  << " pieces, +" << added << " CONTROL)\n";
 
     } else if (command == "tokenize" || command == "encode" || command == "decode") {
         std::string model_file;

@@ -171,7 +171,7 @@ private:
 class PieceCounter {
 public:
   PieceCounter(const CounterSpec& counter_spec,
-               const NormalizerSpec& normalizer_spec);
+               const PreTokenizerSpec& pretokenizer_spec);
   ~PieceCounter();
 
   bool Count();
@@ -219,7 +219,7 @@ private:
   std::vector<int64_t> freqs_;
   std::vector<Token*> token_lists_;
   CounterSpec counter_spec_;
-  NormalizerSpec normalizer_spec_;
+  PreTokenizerSpec pretokenizer_spec_;
   std::unordered_map<int, std::string> vocab_;
 };
 
