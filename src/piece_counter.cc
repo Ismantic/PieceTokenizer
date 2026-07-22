@@ -178,38 +178,15 @@ bool PieceCounter::LoadSentences() {
   const Normalizer normalizer(normalizer_spec_);
   const std::string_view space = normalizer_spec_.GetSpace();
   const int cut = normalizer_spec_.GetCut();
+  const bool split_digits = normalizer_spec_.GetSplitDigits();
   const int num_threads = counter_spec_.cpu_count();
   constexpr size_t kBatchSize = 1000000;
 
-  // Optional cn-mode cutter for Han runs.
+  // Optional cn-mode cutter for Han runs (Cn axis). Built by the single
+  // owner MakeCnCut: ""→none, "no"→per-char, path→dict.
   std::unique_ptr<CnCutter> cn_cutter;
-  ustr::CnCutFn cn_cut_fn;
-  if (counter_spec_.cn_dict() == "no") {
-    // Per-character mode: split each Han character individually.
-    cn_cut_fn = [](std::string_view s) {
-      std::vector<std::string> out;
-      const char* p = s.data();
-      const char* end = p + s.size();
-      while (p < end) {
-        const int n = std::min<int>(ustr::OneUTF8Size(p), end - p);
-        out.emplace_back(p, n);
-        p += n;
-      }
-      return out;
-    };
-    LOG(INFO) << "cn mode enabled (per-character)";
-  } else if (!counter_spec_.cn_dict().empty()) {
-    auto dict = LoadCnDict(counter_spec_.cn_dict());
-    if (dict.empty()) {
-      LOG(ERROR) << "cn dict is empty: " << counter_spec_.cn_dict();
-      return false;
-    }
-    cn_cutter = std::make_unique<CnCutter>(dict);
-    cn_cut_fn = [cutter = cn_cutter.get()](std::string_view s) {
-      return cutter->Cut(s);
-    };
-    LOG(INFO) << "cn mode enabled (dict)";
-  }
+  ustr::CnCutFn cn_cut_fn = MakeCnCut(counter_spec_.cn_dict(), &cn_cutter);
+  if (!counter_spec_.cn_dict().empty() && !cn_cut_fn) return false;
 
   LOG(INFO) << "Loading and tokenizing sentences ...";
   std::unordered_map<std::string, int64_t> tokens;
@@ -225,7 +202,7 @@ bool PieceCounter::LoadSentences() {
                        std::unordered_map<std::string, int64_t>& sink) {
     const std::string normalized = normalizer.Normalize(line);
     if (cn_cut_fn) {
-      for (auto& w : ustr::SplitTextCn(normalized, space, cn_cut_fn, cut))
+      for (auto& w : ustr::SplitTextCn(normalized, space, cn_cut_fn, cut, split_digits))
         sink[std::move(w)] += 1;
     } else {
       for (const auto& w : ustr::SplitText(normalized, space, cut))

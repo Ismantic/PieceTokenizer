@@ -15,34 +15,9 @@ SentencePieceTokenizer::SentencePieceTokenizer(const Model& model,
       space_(model.GetNormalizerSpec().GetSpace()),
       cut_(model.GetNormalizerSpec().GetCut()),
       split_digits_(model.GetNormalizerSpec().GetSplitDigits()) {
-  // cn mode: pre-split Han runs to match training behavior (per-character or dict).
-  // When cn_dict is empty, no pre-split happens (default sentencepiece behavior).
-  if (cn_dict == "no") {
-    cn_cut_fn_ = [](std::string_view s) {
-      std::vector<std::string> out;
-      const char* p = s.data();
-      const char* end = p + s.size();
-      while (p < end) {
-        const int n = std::min<int>(ustr::OneUTF8Size(p), end - p);
-        out.emplace_back(p, n);
-        p += n;
-      }
-      return out;
-    };
-    LOG(INFO) << "SentencePieceTokenizer cn mode enabled (per-character"
-              << ", cut=" << cut_ << ", split_digits=" << split_digits_ << ")";
-  } else if (!cn_dict.empty()) {
-    auto dict = LoadCnDict(cn_dict);
-    if (!dict.empty()) {
-      cn_cutter_ = std::make_unique<CnCutter>(dict);
-      cn_cut_fn_ = [cutter = cn_cutter_.get()](std::string_view s) {
-        return cutter->Cut(s);
-      };
-      LOG(INFO) << "SentencePieceTokenizer cn mode enabled (dict)";
-    } else {
-      LOG(ERROR) << "cn dict is empty: " << cn_dict;
-    }
-  }
+  // cn mode: pre-split Han runs to match training behavior (Cn axis, built
+  // by the single owner MakeCnCut: ""→none, "no"→per-char, path→dict).
+  cn_cut_fn_ = MakeCnCut(cn_dict, &cn_cutter_);
 
   for (size_t i = 0; i < model_->PiecesSize(); ++i) {
     const auto& p = model_->GetPieces(i);

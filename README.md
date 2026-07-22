@@ -8,7 +8,7 @@ BPE/BBPE + BytePiece 的 C++ 实现，支持多种训练算法和推理策略。
 - 文本格式模型文件，可读可编辑
 - Python 绑定（Pybind11）
 - 内置中英文维基百科语料下载与预处理流程
-- CN 模式：对连续汉字做预切分
+- 系统化的 PreTokenizer：Split / Digit / Cn 三个正交参数
 - 多线程流式数据读取和处理
 
 ## 构建
@@ -60,48 +60,70 @@ echo "231 192 163 897" | ./build/piece-tokenizer decode --model output/bytepiece
 
 ### 预分词（PreTokenize）
 
-不需要模型文件，直接对文本做 Normalize + SplitText：
+不需要模型文件，直接对文本做 `Normalizer → PreTokenizer` 两段。PreTokenizer 有 **3 个正交参数**（任意组合，互不强制），各自 1:1 对应模型里持久化的一个字段：
+
+| 参数 | 取值 | 含义 | 对应字段 |
+|---|---|---|---|
+| `--split` | `word`（默认）/ `isolate` | word=GPT-4 式（`▁` 依附后词，`don't`→`don`+`'t`）；isolate=空格与每个标点各自独立（`don't` 整体保留） | `cut` 0/1 |
+| `--digit` | `keep`（默认）/ `split` | 数字串整段 / 逐码点切开 | `split_digits` |
+| `--cn-dict` | 不传 / `no` / 词典路径 | 连续汉字段：不切 / 逐字 / 按词典（见下方 CN 模式） | `cn_dict` |
+
+`--split` 只影响空格/标点；字母、数字、汉字在两种取值下都成连续串（数字逐字由 `--digit split`，汉字逐字由 `--cn-dict no` 控制）。
 
 ```bash
-# cut=0（默认，对齐 GPT-4 regex）
-echo "Hello, World! don't 你好，世界。123abc" | ./build/piece-tokenizer pretokenize --cut 0
+S="Hello, World! don't 你好，世界。123abc"
+
+# split=word（默认，对齐 GPT-4 regex 骨架）
+echo "$S" | ./build/piece-tokenizer pretokenize --split word
 # Hello , ▁World ! ▁don 't ▁ 你好 ， 世界 。 123 abc
 
-# cut=1（空格和标点全部独立，保留英文缩写）
-echo "Hello, World! don't 你好，世界。123abc" | ./build/piece-tokenizer pretokenize --cut 1
+# split=isolate（空格和标点全部独立，英文缩写整体保留）
+echo "$S" | ./build/piece-tokenizer pretokenize --split isolate
 # Hello , ▁ World ! ▁ don't ▁ 你好 ， 世界 。 123 abc
 
-# 带归一化
+# digit=split（数字逐字，独立于 CN 模式）
+echo "$S" | ./build/piece-tokenizer pretokenize --digit split
+# Hello , ▁World ! ▁don 't ▁ 你好 ， 世界 。 1 2 3 abc
+
+# cn-dict=no（连续汉字逐字）
+echo "$S" | ./build/piece-tokenizer pretokenize --cn-dict no
+# Hello , ▁World ! ▁don 't ▁ 你 好 ， 世 界 。 123 abc
+
+# 带归一化（Normalizer 阶段）
 echo "HELLO" | ./build/piece-tokenizer pretokenize --normalize NFKC_CF
 # hello
 
-# 保留所有空格（不合并、不去首尾）
+# 保留所有空格（不合并、不去首尾；Normalizer 阶段）
 echo "  Hello   World  " | ./build/piece-tokenizer pretokenize --reconstruct
 # ▁ ▁Hello ▁ ▁ ▁World ▁ ▁
 ```
+
+> `--cut 0|1` 仍作为 `--split word|isolate` 的别名保留。
 
 ### 词频统计（raw-count）
 
 对输入做预分词后统计词频，输出 `word\tfreq` 格式（按频率降序）：
 
 ```bash
-./build/piece-tokenizer raw-count --input corpus.txt --cut 1 --output raw_count.txt
+./build/piece-tokenizer raw-count --input corpus.txt --split isolate --output raw_count.txt
 ```
+
+`raw-count` 支持和 `pretokenize` 相同的 `--split / --digit / --cn-dict / --normalize / --reconstruct`。
 
 ### Python 接口
 
 ```python
 import piece_tokenizer as pt
 
-# PreTokenizer：Normalize + SplitText，不需要模型文件
-p = pt.PreTokenizer(normalize='no', cut=0)
+# PreTokenizer：Normalize + Split，不需要模型文件。3 个正交参数：
+#   split='word'|'isolate'   digit='keep'|'split'   cn=''|'no'|'<词典路径>'
+p = pt.PreTokenizer(normalize='no', split='word')
 p.tokenize("Hello, World!")        # → ['Hello', ',', '▁World', '!']
 
-p1 = pt.PreTokenizer(cut=1)
-p1.tokenize("Hello, World!")       # → ['Hello', ',', '▁', 'World', '!']
-
-p2 = pt.PreTokenizer(reconstruct=True)
-p2.tokenize("  Hello  ")           # → ['▁', '▁Hello', '▁', '▁']
+pt.PreTokenizer(split='isolate').tokenize("Hello, World!")  # → ['Hello', ',', '▁', 'World', '!']
+pt.PreTokenizer(digit='split').tokenize("abc123def")        # → ['abc', '1', '2', '3', 'def']
+pt.PreTokenizer(cn='no').tokenize("你好世界hi")              # → ['你', '好', '世', '界', 'hi']
+pt.PreTokenizer(reconstruct=True).tokenize("  Hello  ")     # → ['▁', '▁Hello', '▁', '▁']
 
 # Tokenizer：加载训练好的模型做编码/解码
 tok = pt.Tokenizer()
@@ -147,7 +169,7 @@ BPE 只看字节/字符共现频率，训练中文时经常把 `▁雨星朋友`
 
 想要"中文按字 + 英文 BPE"组合的最简方式。
 
-**`--cn-dict no` 隐含 char mode：训练时会强制 `cut=1 + split_digits=true`**（无需用户再传），所以词表里：
+**`--cn-dict no` 隐含 char mode：训练时会强制 `cut=1 + split_digits=true`**（即 Split=isolate + Digit=split，无需用户再传；该强制由 `main.cc` 单点处理，piece / sentencepiece 统一生效），所以词表里：
 - **汉字** → 全部单字（不会有中文 N-gram piece）
 - **数字** → 全部单 digit（不会有 `2024 / 200` 这类 N-gram）
 - **标点 / 符号** → 单 codepoint，不带空格前缀（不会有 `▁( / ▁《`；空格 `▁` 单立成 token）

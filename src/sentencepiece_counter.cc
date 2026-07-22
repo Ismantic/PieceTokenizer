@@ -57,50 +57,18 @@ bool SentencePieceCounter::InitMetaPieces() {
 bool SentencePieceCounter::LoadSentences() {
     const uint32_t UNK = counter_spec_.GetUnkUnicode();
 
-    // cn_dict="no" (char mode) forces cut=1 + split_digits=true so that
-    // digits, punctuation, and symbols are kept as single codepoints —
-    // only ASCII-letter runs go through BPE merging. Persist to spec so
-    // inference matches training.
-    if (counter_spec_.cn_dict() == "no") {
-        normalizer_spec_.SetCut(1);
-        normalizer_spec_.SetSplitDigits(true);
-    }
+    // char-mode forcing (cut=1 + split_digits) is applied upstream in
+    // main.cc RunCount and persisted in normalizer_spec_ before we run.
     const Normalizer normalizer(normalizer_spec_);
     const std::string_view space = normalizer_spec_.GetSpace();
     const int cut = normalizer_spec_.GetCut();
     const bool split_digits = normalizer_spec_.GetSplitDigits();
 
-    // Optional cn-mode cutter for Han runs (parallel with piece method).
-    // cn_dict="no" → per-character (force Han characters to be single tokens).
-    // cn_dict=<path> → dict-based Unigram pre-segmentation.
-    // cn_dict=""    → no cn mode; Han runs go through normal BPE merging.
+    // Optional cn-mode cutter for Han runs (Cn axis). Built by the single
+    // owner MakeCnCut: ""→none, "no"→per-char, path→dict.
     std::unique_ptr<CnCutter> cn_cutter;
-    ustr::CnCutFn cn_cut_fn;
-    if (counter_spec_.cn_dict() == "no") {
-        cn_cut_fn = [](std::string_view s) {
-            std::vector<std::string> out;
-            const char* p = s.data();
-            const char* end = p + s.size();
-            while (p < end) {
-                const int n = std::min<int>(ustr::OneUTF8Size(p), end - p);
-                out.emplace_back(p, n);
-                p += n;
-            }
-            return out;
-        };
-        LOG(INFO) << "cn mode enabled (per-character, cut=1, split_digits=true)";
-    } else if (!counter_spec_.cn_dict().empty()) {
-        auto dict = LoadCnDict(counter_spec_.cn_dict());
-        if (dict.empty()) {
-            LOG(ERROR) << "cn dict is empty: " << counter_spec_.cn_dict();
-            return false;
-        }
-        cn_cutter = std::make_unique<CnCutter>(dict);
-        cn_cut_fn = [cutter = cn_cutter.get()](std::string_view s) {
-            return cutter->Cut(s);
-        };
-        LOG(INFO) << "cn mode enabled (dict)";
-    }
+    ustr::CnCutFn cn_cut_fn = MakeCnCut(counter_spec_.cn_dict(), &cn_cutter);
+    if (!counter_spec_.cn_dict().empty() && !cn_cut_fn) return false;
 
     // Batch-read + parallel normalize/split + merge into global map.
     LOG(INFO) << "Loading and tokenizing sentences ...";

@@ -139,6 +139,12 @@ std::vector<std::string_view> SplitText(std::string_view text, std::string_view 
 // otherwise attach the space to a Han character — Han words never
 // carry an attached space prefix.
 //
+// `cn_cut` may be empty: then Han runs are kept whole (Cn=none), and the
+// function still applies `split_digits`. So with an empty `cn_cut` and
+// split_digits=false it is exactly SplitText (only re-typed to owned
+// strings). This makes it the single split entry covering every
+// (cut, split_digits, cn) combination.
+//
 // Returns owned strings (not views into `text`) because cutter outputs
 // are owned strings.
 using CnCutFn = std::function<std::vector<std::string>(std::string_view)>;

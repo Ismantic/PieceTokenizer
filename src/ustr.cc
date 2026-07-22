@@ -483,7 +483,7 @@ std::vector<std::string> SplitTextCn(std::string_view text,
         size_t mb = 0;
         const uint32_t cp = DecodeUTF8(piece.data(),
                                        piece.data() + piece.size(), &mb);
-        if (IsHan(cp)) {
+        if (IsHan(cp) && cn_cut) {
             for (auto& w : cn_cut(piece)) result.emplace_back(std::move(w));
         } else if (split_digits && IsDigitCodepoint(cp)) {
             const char* p = piece.data();

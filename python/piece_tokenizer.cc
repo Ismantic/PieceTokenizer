@@ -6,7 +6,7 @@
 
 #include "piece_spec.h"
 #include "normalizer.h"
-#include "tokenizer.h"
+#include "pretokenizer.h"
 #include "naive_counter.h"
 #include "naive_tokenizer.h"
 #include "piece_counter.h"
@@ -143,32 +143,43 @@ private:
     std::unique_ptr<BytePieceTokenizer> bp_tok_;
 };
 
-class PreTokenizer {
+// Model-free Normalize + Split, exposing the PreTokenizer's three axes:
+//   split ∈ {word, isolate}   digit ∈ {keep, split}   cn ∈ {"", "no", path}
+class PyPreTokenizer {
 public:
-    PreTokenizer(const std::string& normalize = "no", int cut = 0, bool reconstruct = false) {
+    PyPreTokenizer(const std::string& normalize = "no",
+                   const std::string& split = "word",
+                   const std::string& digit = "keep",
+                   const std::string& cn = "",
+                   bool reconstruct = false) {
         spec_.SetName(normalize);
-        spec_.SetCut(cut);
+        spec_.SetCut(split == "isolate" ? 1 : 0);
+        spec_.SetSplitDigits(digit == "split");
         spec_.SetReconstruct(reconstruct);
-        tokenizer_ = std::make_unique<piece::Tokenizer>(spec_);
+        tokenizer_ = std::make_unique<piece::PreTokenizer>(spec_, cn);
     }
 
     std::vector<std::string> tokenize(const std::string& text) const {
-        return tokenizer_->Tokenize(text);
+        return tokenizer_->PreTokenize(text);
     }
 
 private:
     NormalizerSpec spec_;
-    std::unique_ptr<piece::Tokenizer> tokenizer_;
+    std::unique_ptr<piece::PreTokenizer> tokenizer_;
 };
 
 PYBIND11_MODULE(piece_tokenizer, m) {
     m.doc() = "PieceTokenizer Python bindings";
 
-    py::class_<PreTokenizer>(m, "PreTokenizer")
-        .def(py::init<const std::string&, int, bool>(),
-             py::arg("normalize") = "no", py::arg("cut") = 0, py::arg("reconstruct") = false,
-             "Create a pre-tokenizer (normalize + split)")
-        .def("tokenize", &PreTokenizer::tokenize, py::arg("text"),
+    py::class_<PyPreTokenizer>(m, "PreTokenizer")
+        .def(py::init<const std::string&, const std::string&, const std::string&,
+                      const std::string&, bool>(),
+             py::arg("normalize") = "no", py::arg("split") = "word",
+             py::arg("digit") = "keep", py::arg("cn") = "",
+             py::arg("reconstruct") = false,
+             "Create a pre-tokenizer (normalize + split). Axes: "
+             "split=word|isolate, digit=keep|split, cn=''|no|<dict path>")
+        .def("tokenize", &PyPreTokenizer::tokenize, py::arg("text"),
              "Pre-tokenize text into tokens");
 
     py::class_<PyTokenizer>(m, "Tokenizer")

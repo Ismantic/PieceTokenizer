@@ -15,7 +15,7 @@
 #include "bytepiece_counter.h"
 #include "bytepiece_tokenizer.h"
 #include "normalizer.h"
-#include "tokenizer.h"
+#include "pretokenizer.h"
 
 namespace piece {
 
@@ -41,9 +41,13 @@ void PrintUsage(const char* prog) {
               << "  --max-piece-size <int> Max bytes per learned piece (default: 18, ~6 CJK chars)\n"
               << "  --cn-dict <file>       Enable CN mode for `piece` method using\n"
               << "                         a TSV (word\\tfreq) Unigram dictionary\n"
-              << "\nPretokenize/Raw-count options:\n"
+              << "\nPretokenize/Raw-count options (PreTokenizer 3 axes):\n"
               << "  --normalize <name>     Normalizer: no|NMT_NFKC|NFKC_CF (default: no)\n"
-              << "  --cut <0|1>            0=default, 1=split spaces/punct independently\n"
+              << "  --split <word|isolate> Split axis: word=GPT-4-style attach, isolate=spaces/punct standalone (default: word)\n"
+              << "  --digit <keep|split>   Digit axis: keep runs, or split per-codepoint (default: keep)\n"
+              << "  --cn-dict <no|file>    Cn axis: no=per-char, TSV(word\\tfreq)=dict, omitted=none\n"
+              << "  --cut <0|1>            Alias for --split (0=word, 1=isolate)\n"
+              << "  --reconstruct          Preserve all spaces (no stripping/merging)\n"
               << "  --input <file>         Input file (repeatable for raw-count)\n"
               << "  --output <file>        Output file (raw-count only, default: stdout)\n"
               << "  --max-piece-size <int> Skip tokens exceeding this many bytes (raw-count, default: 0=unlimited)\n"
@@ -86,6 +90,16 @@ void RunCount(const std::string& method,
     normalizer_spec.SetName(normalizer_name);
     normalizer_spec.SetCut(cut);
     normalizer_spec.SetReconstruct(reconstruct);
+
+    // Single owner of the char-mode policy: cn_dict="no" forces cut=1 +
+    // split_digits=true (= Split isolate + Digit split) for every method
+    // that supports cn mode, so digits/punct/symbols stay single codepoints
+    // and only ASCII-letter runs go through BPE. Persisted to the model so
+    // inference matches training.
+    if (counter_spec.cn_dict() == "no") {
+        normalizer_spec.SetCut(1);
+        normalizer_spec.SetSplitDigits(true);
+    }
 
     // Adjust vocab_size for byte tokens and control tokens
     int size = vocab_size;
@@ -370,14 +384,22 @@ int main(int argc, char* argv[]) {
     } else if (command == "pretokenize") {
         std::string normalizer = "no";
         int cut = 0;
+        bool split_digits = false;
         bool reconstruct = false;
+        std::string cn_dict;
         std::string input_file;
 
         for (int i = 2; i < argc; i++) {
             if (std::strcmp(argv[i], "--normalize") == 0 && i + 1 < argc) {
                 normalizer = argv[++i];
+            } else if (std::strcmp(argv[i], "--split") == 0 && i + 1 < argc) {
+                cut = std::strcmp(argv[++i], "isolate") == 0 ? 1 : 0;
+            } else if (std::strcmp(argv[i], "--digit") == 0 && i + 1 < argc) {
+                split_digits = std::strcmp(argv[++i], "split") == 0;
             } else if (std::strcmp(argv[i], "--cut") == 0 && i + 1 < argc) {
                 cut = std::atoi(argv[++i]);
+            } else if (std::strcmp(argv[i], "--cn-dict") == 0 && i + 1 < argc) {
+                cn_dict = argv[++i];
             } else if (std::strcmp(argv[i], "--reconstruct") == 0) {
                 reconstruct = true;
             } else if (std::strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
@@ -402,12 +424,13 @@ int main(int argc, char* argv[]) {
         piece::NormalizerSpec spec;
         spec.SetName(normalizer);
         spec.SetCut(cut);
+        spec.SetSplitDigits(split_digits);
         spec.SetReconstruct(reconstruct);
-        piece::Tokenizer tokenizer(spec);
+        piece::PreTokenizer tokenizer(spec, cn_dict);
 
         std::string line;
         while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Tokenize(line);
+            auto tokens = tokenizer.PreTokenize(line);
             for (size_t i = 0; i < tokens.size(); ++i) {
                 if (i > 0) std::cout << ' ';
                 std::cout << tokens[i];
@@ -418,7 +441,9 @@ int main(int argc, char* argv[]) {
     } else if (command == "raw-count") {
         std::string normalizer = "no";
         int cut = 0;
+        bool split_digits = false;
         bool reconstruct = false;
+        std::string cn_dict;
         int max_piece_size = 0;
         std::vector<std::string> inputs;
         std::string output_file;
@@ -426,8 +451,14 @@ int main(int argc, char* argv[]) {
         for (int i = 2; i < argc; i++) {
             if (std::strcmp(argv[i], "--normalize") == 0 && i + 1 < argc) {
                 normalizer = argv[++i];
+            } else if (std::strcmp(argv[i], "--split") == 0 && i + 1 < argc) {
+                cut = std::strcmp(argv[++i], "isolate") == 0 ? 1 : 0;
+            } else if (std::strcmp(argv[i], "--digit") == 0 && i + 1 < argc) {
+                split_digits = std::strcmp(argv[++i], "split") == 0;
             } else if (std::strcmp(argv[i], "--cut") == 0 && i + 1 < argc) {
                 cut = std::atoi(argv[++i]);
+            } else if (std::strcmp(argv[i], "--cn-dict") == 0 && i + 1 < argc) {
+                cn_dict = argv[++i];
             } else if (std::strcmp(argv[i], "--reconstruct") == 0) {
                 reconstruct = true;
             } else if (std::strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
@@ -446,8 +477,9 @@ int main(int argc, char* argv[]) {
         piece::NormalizerSpec spec;
         spec.SetName(normalizer);
         spec.SetCut(cut);
+        spec.SetSplitDigits(split_digits);
         spec.SetReconstruct(reconstruct);
-        piece::Tokenizer tokenizer(spec);
+        piece::PreTokenizer tokenizer(spec, cn_dict);
 
         std::unordered_map<std::string, int64_t> counts;
         int64_t line_count = 0;
@@ -455,7 +487,7 @@ int main(int argc, char* argv[]) {
         auto process_stream = [&](std::istream& in) {
             std::string line;
             while (std::getline(in, line)) {
-                for (const auto& token : tokenizer.Tokenize(line)) {
+                for (const auto& token : tokenizer.PreTokenize(line)) {
                     if (max_piece_size > 0 &&
                         static_cast<int>(token.size()) > max_piece_size)
                         continue;

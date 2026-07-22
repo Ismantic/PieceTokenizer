@@ -54,6 +54,7 @@ private:
   ustr::CnCutFn cn_cut_fn_;
   std::string space_;
   int cut_;
+  bool split_digits_;
 };
 
 }  // namespace piece

@@ -11,7 +11,7 @@ set(LIB_SRCS
     src/sentencepiece_counter.cc
     src/sentencepiece_tokenizer.cc
     src/normalizer.cc
-    src/tokenizer.cc
+    src/pretokenizer.cc
     src/bytepiece_tokenizer.cc
     src/bytepiece_counter.cc
     src/piece_tokenizer.cc
