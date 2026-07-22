@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project(PieceTokenizer LANGUAGES C CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -34,6 +36,10 @@ add_executable(piece_tokenizer_test
     src/ustr_test.cc
 )
 target_link_libraries(piece_tokenizer_test PRIVATE piece_tokenizer_lib)
+
+if(BUILD_TESTING)
+    add_test(NAME piece_tokenizer_test COMMAND piece_tokenizer_test)
+endif()
 
 option(BUILD_PYTHON "Build Python bindings" OFF)
 if(BUILD_PYTHON)

@@ -181,8 +181,8 @@ bool PieceCounter::LoadSentences() {
   // Optional cn-mode cutter for Han runs (Cn axis). Built by the single
   // owner MakeCnCut: ""→none, "no"→per-char, path→dict.
   std::unique_ptr<CnCutter> cn_cutter;
-  ustr::CnCutFn cn_cut_fn = MakeCnCut(counter_spec_.cn_dict(), &cn_cutter);
-  if (!counter_spec_.cn_dict().empty() && !cn_cut_fn) return false;
+  ustr::CnCutFn cn_cut_fn = MakeCnCut(counter_spec_.dict(), &cn_cutter);
+  if (!counter_spec_.dict().empty() && !cn_cut_fn) return false;
 
   LOG(INFO) << "Loading and tokenizing sentences ...";
   std::unordered_map<std::string, int64_t> tokens;

@@ -3,12 +3,12 @@
 namespace piece {
 
 PreTokenizer::PreTokenizer(const PreTokenizerSpec& spec,
-                           const std::string& cn_dict)
+                           const std::string& dict)
     : normalizer_(spec),
       space_(spec.GetSpace()),
       cut_(spec.GetCut()),
       split_digits_(spec.GetSplitDigits()),
-      cn_cut_fn_(MakeCnCut(cn_dict, &cn_cutter_)) {}
+      cn_cut_fn_(MakeCnCut(dict, &cn_cutter_)) {}
 
 PreTokenizer::~PreTokenizer() = default;
 

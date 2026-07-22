@@ -4,6 +4,7 @@
 #include <iostream>
 #include <sstream>
 #include <cstdint>
+#include <cctype>
 
 #include "sentence.h"
 #include "ustr.h"
@@ -54,7 +55,9 @@ inline std::string Unescape(const std::string& str) {
     std::string result;
     result.reserve(str.size());
     for (size_t i = 0; i < str.size(); ++i) {
-        if (str[i] == '\\' && i + 3 < str.size() && str[i + 1] == 'x') {
+        if (str[i] == '\\' && i + 3 < str.size() && str[i + 1] == 'x' &&
+            std::isxdigit(static_cast<unsigned char>(str[i + 2])) &&
+            std::isxdigit(static_cast<unsigned char>(str[i + 3]))) {
             std::string hex = str.substr(i + 2, 2);
             result += static_cast<char>(strtol(hex.c_str(), nullptr, 16));
             i += 3;
@@ -82,7 +85,7 @@ public:
     // Path to a TSV (`word\tfreq`) Chinese-segmenter dictionary. When
     // non-empty, PieceCounter enters cn mode and runs Han runs through
     // a Unigram cutter. Not serialized to the .model file.
-    std::string cn_dict_;
+    std::string dict_;
 
     int32_t unk_id_ = 0;
     int32_t bos_id_ = 1;
@@ -125,8 +128,8 @@ public:
     int32_t max_piece_size() const { return max_piece_size_; }
     void set_max_piece_size(int32_t n) { max_piece_size_ = n; }
 
-    const std::string& cn_dict() const { return cn_dict_; }
-    void set_cn_dict(const std::string& path) { cn_dict_ = path; }
+    const std::string& dict() const { return dict_; }
+    void set_dict(const std::string& path) { dict_ = path; }
     
     int32_t unk_id() const { return unk_id_; }
     int32_t bos_id() const { return bos_id_; }
@@ -145,10 +148,7 @@ public:
     void add_extra_token(const std::string& token) { extra_tokens_.push_back(token); }
     
     void Clear() {
-        input_.clear();
-        model_prefix_.clear();
-        vocab_size_ = 8000;
-        character_coverage_ = 0.9995f;
+        *this = CounterSpec();
     }
 
     std::string AsStr() const {
@@ -259,11 +259,7 @@ public:
     bool GetSplitDigits() const { return split_digits_; }
 
     void Clear() {
-        name_.clear();
-        space_.clear();
-        cut_ = 0;
-        reconstruct_ = false;
-        split_digits_ = false;
+        *this = PreTokenizerSpec();
     }
 
     std::string AsStr() const {
@@ -349,6 +345,8 @@ public:
 
         void Clear() {
             piece_.clear();
+            u_.clear();
+            v_.clear();
             score_ = 0.0f;
             type_ = NORMAL;
         }
@@ -430,6 +428,10 @@ public:
         std::string section;
         std::string counter_spec_str;
         std::string pretokenizer_spec_str;
+        bool saw_counter_spec = false;
+        bool saw_pretokenizer_spec = false;
+        bool saw_pieces = false;
+        bool saw_pieces_size = false;
     
         Clear();
     
@@ -440,6 +442,10 @@ public:
     
             if (line[0] == '[' && line[line.size()-1] == ']') {
                 section = line.substr(1, line.size()-2);
+                saw_counter_spec |= section == "CounterSpec";
+                saw_pretokenizer_spec |= section == "PreTokenizerSpec" ||
+                                         section == "NormalizerSpec";
+                saw_pieces |= section == "Pieces";
                 continue;
             }
     
@@ -451,6 +457,7 @@ public:
             } else if (section == "Pieces") {
                 if (line.find("size=") == 0) {
                     pieces_size = std::stoul(line.substr(5));
+                    saw_pieces_size = true;
                     continue;
                 }
     
@@ -476,7 +483,7 @@ public:
                 // 确保至少有基本的4个字段
                 if (parts.size() >= 4) {
                     try {
-                        int i = std::stoi(parts[0]);
+                        const size_t i = std::stoul(parts[0]);
                         std::string p = parts[1];
                         float s = std::stof(parts[2]);
                         int t = std::stoi(parts[3]);
@@ -493,20 +500,29 @@ public:
                             v = parts[5];
                         }
                         
+                        if (i != pieces_.size() || t < Piece::NORMAL ||
+                            t > Piece::BYTE || t == 0) {
+                            std::cerr << "Error: invalid piece index or type: " << line << std::endl;
+                            return false;
+                        }
                         auto* piece = InsertPieces();
                         piece->SetPiece(Unescape(p), Unescape(u), Unescape(v));
                         piece->SetScore(s);
                         piece->SetType(static_cast<Piece::Type>(t));
                     } catch (const std::exception& e) {
                         std::cerr << "Error: failed to parse piece line: " << line << " (" << e.what() << ")" << std::endl;
+                        return false;
                     }
                 } else {
                     std::cerr << "Error: invalid piece line format (not enough fields): " << line << std::endl;
+                    return false;
                 }
             }
         }
     
-        if (!counter_spec_.FromStr(counter_spec_str) ||
+        if (!saw_counter_spec || !saw_pretokenizer_spec || !saw_pieces ||
+            !saw_pieces_size ||
+            !counter_spec_.FromStr(counter_spec_str) ||
             !pretokenizer_spec_.FromStr(pretokenizer_spec_str)) {
                 return false;
         }
@@ -533,8 +549,7 @@ public:
         }
 
         std::string data = AsStr();
-        output->Write(data);
-        return true;
+        return output->Write(data);
     }
 
     bool Load(const std::string& filename) {
@@ -545,7 +560,7 @@ public:
         }
 
         std::string data;
-        input->ReadAll(&data);
+        if (!input->ReadAll(&data)) return false;
         return FromStr(data);
     }
 

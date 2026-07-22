@@ -37,14 +37,14 @@ echo "897 411"  | ./build/piece-tokenizer decode   --model output/bytepiece.mode
 |---|---|---|
 | `--split` | `word`（默认）/ `isolate` | word=GPT-4 式（`▁` 依附后词，`don't`→`don`+`'t`）；isolate=空格与每个标点各自独立（`don't` 整体保留）|
 | `--digit` | `keep`（默认）/ `split` | 数字串整段 / 逐码点切开 |
-| `--cn-dict` | 空 / `no` / 词典路径 | 连续汉字：不切 / 逐字 / 按词典（见 CN 模式）|
+| `--dict` | 空 / `no` / 词典路径 | 连续汉字：不切 / 逐字 / 按词典（见 CN 模式）|
 
 ```bash
 S="Hello, World! don't 你好，世界。123abc"
 echo "$S" | ./build/piece-tokenizer pretokenize                  # Hello , ▁World ! ▁don 't ▁ 你好 ， 世界 。 123 abc
 echo "$S" | ./build/piece-tokenizer pretokenize --split isolate  # Hello , ▁ World ! ▁ don't ▁ 你好 ， 世界 。 123 abc
 echo "$S" | ./build/piece-tokenizer pretokenize --digit split    # ... 世界 。 1 2 3 abc
-echo "$S" | ./build/piece-tokenizer pretokenize --cn-dict no     # ... ▁ 你 好 ， 世 界 。 123 abc
+echo "$S" | ./build/piece-tokenizer pretokenize --dict no        # ... ▁ 你 好 ， 世 界 。 123 abc
 ```
 
 另有 `--normalize <name>`（如 `NFKC_CF`）、`--reconstruct`（保留所有空格）属 Normalizer 阶段。`raw-count` 用同一套参数做预分词并输出 `word\tfreq`（频率降序）。
@@ -60,7 +60,7 @@ echo "$S" | ./build/piece-tokenizer pretokenize --cn-dict no     # ... ▁ 你 �
 
 ## CN 模式（`piece` / `sentencepiece`）
 
-BPE 只看共现频率，训练中文时易学出 `▁雨星朋友` 这种跨词串。CN 模式在合并前先对连续汉字预切。**训练和推理必须传同一个 `--cn-dict`**：
+BPE 只看共现频率，训练中文时易学出 `▁雨星朋友` 这种跨词串。CN 模式在合并前先对连续汉字预切。**训练和推理必须传同一个 `--dict`**：
 
 - **空** — 不启用，整段进 BPE。
 - **`no`** — 逐字模式：汉字全单字，并隐含强制 `cut=1 + split_digits=true`（= Split=isolate + Digit=split，由 `main.cc` 统一处理），于是中文/数字/标点各占一个 token，只有英文走 BPE。适合 char-level backbone / CWS / NER。
@@ -69,16 +69,16 @@ BPE 只看共现频率，训练中文时易学出 `▁雨星朋友` 这种跨词
 ```bash
 # 逐字模式（sentencepiece 带 character_coverage 保字，推荐）
 ./build/piece-tokenizer count --method sentencepiece --input cn.txt \
-    --vocab-size 16000 --model output/sp_char --cn-dict no
+    --vocab-size 16000 --model output/sp_char --dict no
 echo "2024年8月,GPT-4 model release 苹果公司" | \
-    ./build/piece-tokenizer tokenize --model output/sp_char.model --cn-dict no
+    ./build/piece-tokenizer tokenize --model output/sp_char.model --dict no
 # → 2 0 2 4 年 8 月 , GPT - 4 ▁ model ▁ release ▁ 苹 果 公 司
 
 # 词典模式
 ./build/piece-tokenizer count --method piece --input corpus.txt \
-    --model output/pc --cn-dict dict.txt
+    --model output/pc --dict dict.txt
 echo "Tom 他是英国人Bat" | \
-    ./build/piece-tokenizer tokenize --model output/pc.model --cn-dict dict.txt
+    ./build/piece-tokenizer tokenize --model output/pc.model --dict dict.txt
 # → T om ▁ 他 是 英国 人 B at
 ```
 
@@ -104,7 +104,7 @@ import piece_tokenizer as pt
 pt.PreTokenizer(split='isolate', digit='split', cn='no').tokenize("你好123 hi")
 # → ['你', '好', '1', '2', '3', '▁', 'hi']
 
-# 加载训练好的模型（cn_dict 需与训练一致）
+# 加载训练好的模型（dict 需与训练一致）
 tok = pt.Tokenizer()
 tok.load("output/bytepiece.model")
 tok.encode("你好世界")          # → [('你', 897), ('好', 411), ...]

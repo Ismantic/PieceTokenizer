@@ -18,7 +18,7 @@ std::unordered_map<std::string, float_t> LoadCnDict(const std::string& path);
 
 class CnCutter;
 
-// Builds the CN-run cut function from a `cn_dict` selector — the single
+// Builds the CN-run cut function from a `dict` selector — the single
 // place this mapping lives (Cn axis):
 //   ""    -> empty function   (Cn=none; caller keeps Han runs whole)
 //   "no"  -> per-codepoint     (Cn=char)
@@ -26,7 +26,7 @@ class CnCutter;
 // In dict mode the owning CnCutter is created into *owner and must
 // outlive the returned function (it captures a raw pointer to it).
 // Returns an empty function on none/failure.
-ustr::CnCutFn MakeCnCut(const std::string& cn_dict,
+ustr::CnCutFn MakeCnCut(const std::string& dict,
                         std::unique_ptr<CnCutter>* owner);
 
 // CnCutter applies Unigram-style word segmentation to runs of Han

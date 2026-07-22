@@ -4,6 +4,7 @@
 
 #include "bytepiece_tokenizer.h"
 #include "normalizer.h"
+#include "piece_spec.h"
 #include "test.h"
 
 namespace {
@@ -76,6 +77,26 @@ TEST(NormalizerTest, NmtNfkcNormalizesCompatibilityChars) {
 
     piece::Normalizer normalizer(spec);
     EXPECT_EQ("123", normalizer.Normalize("①②③"));
+}
+
+TEST(ModelTest, RejectsMissingAndEmptyModels) {
+    piece::Model model;
+    EXPECT_FALSE(model.Load("/definitely/missing/piece-tokenizer.model"));
+    EXPECT_FALSE(model.FromStr(""));
+}
+
+TEST(ModelTest, RejectsNonSequentialPieceIds) {
+    const std::string data =
+        "[CounterSpec]\nmethod=bytepiece\n\n"
+        "[PreTokenizerSpec]\nname=no\nspace=\\x20\n\n"
+        "[Pieces]\nsize=1\n1\ta\t0\t1\t\t\n";
+    piece::Model model;
+    EXPECT_FALSE(model.FromStr(data));
+}
+
+TEST(ModelTest, ReportsOutputOpenFailure) {
+    piece::Model model;
+    EXPECT_FALSE(model.Save("/definitely/missing/piece-tokenizer.model"));
 }
 
 int main() {

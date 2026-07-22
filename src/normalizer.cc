@@ -132,7 +132,7 @@ bool MapBuilder::DecompileUstrMap(std::string_view blob,
         for (int c = 0; c <= 255; ++c) {
             key.push_back(static_cast<char>(c));
             size_t node_pos_ = node_pos;
-            size_t key_pos_ = key_pos_;
+            size_t key_pos_ = key_pos;
             const new_darts::DoubleArray<int>::value_type result = 
                 trie.traverse(key.data(), node_pos_, key_pos_, key.size());
             if (result >= -1) {

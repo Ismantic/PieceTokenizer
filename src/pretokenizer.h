@@ -16,17 +16,17 @@ namespace piece {
 // The single owner of the pre-tokenize stage, shared by every method's
 // counter/tokenizer and by the model-free CLI/Python entry points.
 //
-// Three orthogonal axes, all carried by PreTokenizerSpec + cn_dict:
+// Three orthogonal axes, all carried by PreTokenizerSpec + dict:
 //   Split (spec.cut):          word (0, GPT-4-style attach) / isolate (1)
 //   Digit (spec.split_digits): keep / split (per-codepoint)
-//   Cn    (cn_dict):           none ("") / char ("no") / dict (path)
+//   Cn    (dict):              none ("") / char ("no") / dict (path)
 // Any combination is valid; the axes never force one another.
 class PreTokenizer {
 public:
-  // `spec` supplies name/space/cut/split_digits/reconstruct; `cn_dict`
+  // `spec` supplies name/space/cut/split_digits/reconstruct; `dict`
   // selects the Cn axis ("" none, "no" char, path dict).
   explicit PreTokenizer(const PreTokenizerSpec& spec,
-                        const std::string& cn_dict = "");
+                        const std::string& dict = "");
   ~PreTokenizer();
 
   // Full pipeline: Normalize + Split.

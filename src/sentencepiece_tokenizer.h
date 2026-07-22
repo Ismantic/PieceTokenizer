@@ -61,7 +61,7 @@ public:
   using StrToInt = std::unordered_map<std::string_view, int>;
 
   explicit SentencePieceTokenizer(const Model& model,
-                                  const std::string& cn_dict = "");
+                                  const std::string& dict = "");
   ~SentencePieceTokenizer();
 
   int PieceID(std::string_view piece) const;

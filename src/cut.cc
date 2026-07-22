@@ -8,12 +8,12 @@
 
 namespace piece {
 
-ustr::CnCutFn MakeCnCut(const std::string& cn_dict,
+ustr::CnCutFn MakeCnCut(const std::string& dict,
                         std::unique_ptr<CnCutter>* owner) {
   owner->reset();
-  if (cn_dict.empty()) return {};  // Cn=none
+  if (dict.empty()) return {};  // Cn=none
 
-  if (cn_dict == "no") {
+  if (dict == "no") {
     // Cn=char: split each Han run into individual codepoints.
     return [](std::string_view s) {
       std::vector<std::string> out;
@@ -29,12 +29,12 @@ ustr::CnCutFn MakeCnCut(const std::string& cn_dict,
   }
 
   // Cn=dict: Unigram dictionary segmentation.
-  auto dict = LoadCnDict(cn_dict);
-  if (dict.empty()) {
-    LOG(ERROR) << "cn dict is empty: " << cn_dict;
+  auto entries = LoadCnDict(dict);
+  if (entries.empty()) {
+    LOG(ERROR) << "dict is empty: " << dict;
     return {};
   }
-  *owner = std::make_unique<CnCutter>(dict);
+  *owner = std::make_unique<CnCutter>(entries);
   CnCutter* cutter = owner->get();
   return [cutter](std::string_view s) { return cutter->Cut(s); };
 }

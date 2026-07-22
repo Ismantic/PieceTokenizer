@@ -561,7 +561,7 @@ namespace detail {
             return values_ != nullptr;
         }
         
-        const value_type values(std::size_t id) const {
+        value_type values(std::size_t id) const {
             if (has_values()) {
                 return static_cast<value_type>(values_[id]);
             }

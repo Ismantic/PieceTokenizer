@@ -114,7 +114,8 @@ bool BytePieceCounter::InitMetaPieces() {
         std::make_pair(counter_spec_.pad_piece(), Model::Piece::CONTROL);
   }
 
-  if (meta_pieces_.size() + 256 > counter_spec_.vocab_size()) {
+  if (meta_pieces_.size() + 256 >
+      static_cast<size_t>(counter_spec_.vocab_size())) {
     LOG(ERROR) << "Vocab size is too small for byte pieces. Need at least "
                << meta_pieces_.size() + 256 << " slots.";
     return false;
@@ -235,7 +236,8 @@ void BytePieceCounter::PruneRaw() {
   for (int i = N_.size() - 1; i >= 0; --i) {
     std::unordered_map<std::string, float_t> pruned;
     for (const auto& [k, v] : N_[i]) {
-      if (k.length() == i && v >= (i > 1 ? counter_spec_.min_count() : 0)) {
+      if (k.length() == static_cast<size_t>(i) &&
+          v >= (i > 1 ? counter_spec_.min_count() : 0)) {
         pruned[k] = std::log(v);
       }
     }

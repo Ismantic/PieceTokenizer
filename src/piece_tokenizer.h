@@ -20,11 +20,11 @@ public:
   using EncodeResult = std::vector<std::pair<std::string, int>>;
   using StrToInt = std::unordered_map<std::string_view, int>;
 
-  // When `cn_dict` is non-empty, Encode pre-splits input with
+  // When `dict` is non-empty, Encode pre-splits input with
   // SplitTextCn (matching cn-mode training) so BPE merging never
   // crosses cutter-imposed Han word boundaries.
   explicit PieceTokenizer(const Model& model,
-                          const std::string& cn_dict = "");
+                          const std::string& dict = "");
   ~PieceTokenizer();
 
   EncodeResult Encode(std::string_view text) const;

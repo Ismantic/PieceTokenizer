@@ -161,7 +161,7 @@ std::vector<BytePieceTokenizer::Match> BytePieceTokenizer::GetMatches(
         const size_t num_results = trie_.commonPrefixSearch(
             text.data() + pos, results, kMaxNumResults, num - pos);
         for (size_t i = 0; i < num_results; ++i) {
-            if (pos + results[i].length - 1 < num) {
+            if (pos + results[i].length - 1 < static_cast<size_t>(num)) {
                 matches.emplace_back(pos + results[i].length - 1,
                                      results[i].length,
                                      value_map_.at(results[i].value));

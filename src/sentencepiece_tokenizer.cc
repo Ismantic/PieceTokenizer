@@ -8,7 +8,7 @@
 namespace piece {
 
 SentencePieceTokenizer::SentencePieceTokenizer(const Model& model,
-                                               const std::string& cn_dict)
+                                               const std::string& dict)
     : model_(&model),
       normalizer_(model.GetPreTokenizerSpec()),
       unk_id_(-1),
@@ -17,7 +17,7 @@ SentencePieceTokenizer::SentencePieceTokenizer(const Model& model,
       split_digits_(model.GetPreTokenizerSpec().GetSplitDigits()) {
   // cn mode: pre-split Han runs to match training behavior (Cn axis, built
   // by the single owner MakeCnCut: ""→none, "no"→per-char, path→dict).
-  cn_cut_fn_ = MakeCnCut(cn_dict, &cn_cutter_);
+  cn_cut_fn_ = MakeCnCut(dict, &cn_cutter_);
 
   for (size_t i = 0; i < model_->PiecesSize(); ++i) {
     const auto& p = model_->GetPieces(i);

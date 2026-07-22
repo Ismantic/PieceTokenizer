@@ -4,7 +4,7 @@
 
 namespace piece {
 
-PieceTokenizer::PieceTokenizer(const Model& model, const std::string& cn_dict)
+PieceTokenizer::PieceTokenizer(const Model& model, const std::string& dict)
     : model_(&model),
       normalizer_(model.GetPreTokenizerSpec()),
       space_(model.GetPreTokenizerSpec().GetSpace()),
@@ -15,7 +15,7 @@ PieceTokenizer::PieceTokenizer(const Model& model, const std::string& cn_dict)
 
   // cn mode (Cn axis), built by the single owner MakeCnCut:
   // ""→none, "no"→per-char, path→dict.
-  cn_cut_fn_ = MakeCnCut(cn_dict, &cn_cutter_);
+  cn_cut_fn_ = MakeCnCut(dict, &cn_cutter_);
 
   for (size_t i = 0; i < model_->PiecesSize(); ++i) {
     const auto& piece = model_->GetPieces(i);

@@ -31,6 +31,7 @@ public:
     std::string Decode(const std::vector<int>& ids) const;
     std::string Decode(const EncodeResult& encoded) const;
     std::vector<std::string> Tokenize(std::string_view text) const;
+    int PieceID(std::string_view piece) const;
 
 private:
     struct Match {
@@ -40,7 +41,6 @@ private:
         Match(int e, int n, float_t w) : e(e), n(n), w(w) {}
     };
 
-    int PieceID(std::string_view piece) const;
     std::vector<Match> GetMatches(std::string_view text) const;
     void InitTrie(const std::unordered_map<std::string, float_t>& dict);
 

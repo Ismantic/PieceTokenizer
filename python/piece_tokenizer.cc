@@ -3,16 +3,17 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <stdexcept>
+#include <type_traits>
+#include <variant>
 
 #include "piece_spec.h"
 #include "normalizer.h"
 #include "pretokenizer.h"
-#include "naive_counter.h"
 #include "naive_tokenizer.h"
-#include "piece_counter.h"
 #include "piece_tokenizer.h"
 #include "sentencepiece_tokenizer.h"
-#include "bytepiece_counter.h"
+#include "bytepiece_tokenizer.h"
 
 namespace py = pybind11;
 using namespace piece;
@@ -21,42 +22,52 @@ class PyTokenizer {
 public:
     PyTokenizer() = default;
 
-    bool Load(const std::string& model_file, const std::string& cn_dict = "") {
-        if (!model_.Load(model_file)) {
+    bool Load(const std::string& model_file, const std::string& dict = "") {
+        Model model;
+        if (!model.Load(model_file)) {
             return false;
         }
-        method_ = model_.GetCounterSpec().method();
+        const std::string method = model.GetCounterSpec().method();
+        if (method != "naive" && method != "piece" &&
+            method != "sentencepiece" && method != "bytepiece") {
+            return false;
+        }
+
+        tokenizer_ = std::monostate{};
+        normalizer_.reset();
+        model_ = std::move(model);
 
         const auto& pretokenizer_spec = model_.GetPreTokenizerSpec();
         normalizer_ = std::make_unique<Normalizer>(pretokenizer_spec);
 
-        if (method_ == "naive") {
-            naive_tok_ = std::make_unique<NaiveTokenizer>(model_);
-        } else if (method_ == "piece") {
-            piece_tok_ = std::make_unique<PieceTokenizer>(model_, cn_dict);
-        } else if (method_ == "sentencepiece") {
-            sp_tok_ = std::make_unique<SentencePieceTokenizer>(model_, cn_dict);
-        } else if (method_ == "bytepiece") {
-            bp_tok_ = std::make_unique<BytePieceTokenizer>(model_);
+        if (method == "naive") {
+            tokenizer_ = std::make_unique<NaiveTokenizer>(model_);
+        } else if (method == "piece") {
+            tokenizer_ = std::make_unique<PieceTokenizer>(model_, dict);
+        } else if (method == "sentencepiece") {
+            tokenizer_ = std::make_unique<SentencePieceTokenizer>(model_, dict);
         } else {
-            return false;
+            tokenizer_ = std::make_unique<BytePieceTokenizer>(model_);
         }
         return true;
     }
 
     std::vector<std::pair<std::string, int>> Encode(const std::string& text) const {
-        // piece / sentencepiece / bytepiece all normalize internally;
-        // naive does not, so the binding normalizes upstream.
-        if (method_ == "naive") {
-            return naive_tok_->Encode(normalizer_->Normalize(text));
-        } else if (method_ == "piece") {
-            return piece_tok_->Encode(text);
-        } else if (method_ == "sentencepiece") {
-            return sp_tok_->Encode(text);
-        } else if (method_ == "bytepiece") {
-            return bp_tok_->Encode(text);
-        }
-        return {};
+        EnsureLoaded();
+        return std::visit([&](const auto& tokenizer)
+                -> std::vector<std::pair<std::string, int>> {
+            using Alternative = std::decay_t<decltype(tokenizer)>;
+            if constexpr (std::is_same_v<Alternative, std::monostate>) {
+                return {};
+            } else if constexpr (std::is_same_v<
+                                     typename Alternative::element_type,
+                                     NaiveTokenizer>) {
+                // NaiveTokenizer does not normalize internally.
+                return tokenizer->Encode(normalizer_->Normalize(text));
+            } else {
+                return tokenizer->Encode(text);
+            }
+        }, tokenizer_);
     }
 
     std::vector<int> EncodeAsIds(const std::string& text) const {
@@ -80,35 +91,31 @@ public:
     }
 
     std::string Decode(const std::vector<int>& ids) const {
-        if (method_ == "naive") {
-            return naive_tok_->Decode(ids);
-        } else if (method_ == "piece") {
-            return piece_tok_->Decode(ids);
-        } else if (method_ == "sentencepiece") {
-            return sp_tok_->Decode(ids);
-        } else if (method_ == "bytepiece") {
-            return bp_tok_->Decode(ids);
-        }
-        return "";
+        EnsureLoaded();
+        return std::visit([&](const auto& tokenizer) -> std::string {
+            using Alternative = std::decay_t<decltype(tokenizer)>;
+            if constexpr (std::is_same_v<Alternative, std::monostate>) {
+                return "";
+            } else {
+                return tokenizer->Decode(ids);
+            }
+        }, tokenizer_);
     }
 
     int PieceToId(const std::string& piece) const {
-        if (method_ == "sentencepiece" && sp_tok_) {
-            return sp_tok_->PieceID(piece);
-        } else if (method_ == "naive" && naive_tok_) {
-            return naive_tok_->PieceID(piece);
-        } else if (method_ == "piece" && piece_tok_) {
-            return piece_tok_->PieceID(piece);
-        }
-        // Fallback: linear search
-        const auto& pieces = model_.GetPieces();
-        for (size_t i = 0; i < pieces.size(); i++) {
-            if (pieces[i].GetPiece() == piece) return static_cast<int>(i);
-        }
-        return -1;
+        EnsureLoaded();
+        return std::visit([&](const auto& tokenizer) {
+            using Alternative = std::decay_t<decltype(tokenizer)>;
+            if constexpr (std::is_same_v<Alternative, std::monostate>) {
+                return -1;
+            } else {
+                return tokenizer->PieceID(piece);
+            }
+        }, tokenizer_);
     }
 
     std::string IdToPiece(int id) const {
+        EnsureLoaded();
         const auto& pieces = model_.GetPieces();
         if (id >= 0 && id < static_cast<int>(pieces.size())) {
             return pieces[id].GetPiece();
@@ -119,6 +126,7 @@ public:
     // Bytes-typed accessor: BPE fragment pieces may not form valid UTF-8 by
     // themselves, so this returns the raw bytes without trying to decode.
     py::bytes IdToPieceBytes(int id) const {
+        EnsureLoaded();
         const auto& pieces = model_.GetPieces();
         if (id >= 0 && id < static_cast<int>(pieces.size())) {
             const std::string& s = pieces[id].GetPiece();
@@ -128,19 +136,32 @@ public:
     }
 
     int VocabSize() const {
+        EnsureLoaded();
         return static_cast<int>(model_.PiecesSize());
     }
 
-    const std::string& Method() const { return method_; }
+    const std::string& Method() const {
+        EnsureLoaded();
+        return model_.GetCounterSpec().method();
+    }
 
 private:
+    using Tokenizer = std::variant<
+        std::monostate,
+        std::unique_ptr<NaiveTokenizer>,
+        std::unique_ptr<PieceTokenizer>,
+        std::unique_ptr<SentencePieceTokenizer>,
+        std::unique_ptr<BytePieceTokenizer>>;
+
+    void EnsureLoaded() const {
+        if (std::holds_alternative<std::monostate>(tokenizer_)) {
+            throw std::runtime_error("tokenizer is not loaded");
+        }
+    }
+
     Model model_;
-    std::string method_;
     std::unique_ptr<Normalizer> normalizer_;
-    std::unique_ptr<NaiveTokenizer> naive_tok_;
-    std::unique_ptr<PieceTokenizer> piece_tok_;
-    std::unique_ptr<SentencePieceTokenizer> sp_tok_;
-    std::unique_ptr<BytePieceTokenizer> bp_tok_;
+    Tokenizer tokenizer_;
 };
 
 // Model-free Normalize + Split, exposing the PreTokenizer's three axes:
@@ -184,8 +205,8 @@ PYBIND11_MODULE(piece_tokenizer, m) {
 
     py::class_<PyTokenizer>(m, "Tokenizer")
         .def(py::init<>())
-        .def("load", &PyTokenizer::Load, py::arg("model_file"), py::arg("cn_dict") = "",
-             "Load a trained model file, optionally with cn-dict for piece method")
+        .def("load", &PyTokenizer::Load, py::arg("model_file"), py::arg("dict") = "",
+             "Load a trained model file, optionally with a dictionary for CN mode")
         .def("encode", &PyTokenizer::Encode, py::arg("text"),
              "Encode text into (piece, id) pairs")
         .def("encode_as_ids", &PyTokenizer::EncodeAsIds, py::arg("text"),

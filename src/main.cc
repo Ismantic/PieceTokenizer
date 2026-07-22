@@ -1,8 +1,12 @@
 #include <cstring>
+#include <charconv>
+#include <climits>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 #include "piece_spec.h"
@@ -39,6 +43,102 @@ std::vector<std::string> ParseExtraTokens(const char* arg) {
     return out;
 }
 
+struct PreTokenizerOptions {
+    std::string normalizer = "no";
+    int cut = 0;
+    bool split_digits = false;
+    bool reconstruct = false;
+    std::string dict;
+};
+
+enum class ParseResult { kHandled, kUnknown, kError };
+
+bool ParseIntegerOption(int argc, char* argv[], int* index, int minimum,
+                        int maximum, int* output) {
+    const char* option = argv[*index];
+    if (*index + 1 >= argc) {
+        std::cerr << "Error: " << option << " requires a value\n";
+        return false;
+    }
+    const std::string_view value = argv[++*index];
+    int parsed = 0;
+    const auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (result.ec != std::errc() || result.ptr != value.data() + value.size() ||
+        parsed < minimum || parsed > maximum) {
+        std::cerr << "Error: " << option << " must be an integer in ["
+                  << minimum << ", " << maximum << "]\n";
+        return false;
+    }
+    *output = parsed;
+    return true;
+}
+
+ParseResult ParsePreTokenizerOption(int argc, char* argv[], int* index,
+                                    PreTokenizerOptions* options) {
+    const std::string option = argv[*index];
+    auto next_value = [&]() -> const char* {
+        if (*index + 1 >= argc) {
+            std::cerr << "Error: " << option << " requires a value\n";
+            return nullptr;
+        }
+        return argv[++*index];
+    };
+
+    if (option == "--reconstruct") {
+        options->reconstruct = true;
+        return ParseResult::kHandled;
+    }
+    if (option != "--normalize" && option != "--split" &&
+        option != "--digit" && option != "--cut" && option != "--dict" &&
+        option != "--cn-dict") {
+        return ParseResult::kUnknown;
+    }
+
+    const char* value = next_value();
+    if (!value) return ParseResult::kError;
+    if (option == "--normalize") {
+        options->normalizer = value;
+    } else if (option == "--split") {
+        if (std::strcmp(value, "word") != 0 &&
+            std::strcmp(value, "isolate") != 0) {
+            std::cerr << "Error: --split must be word or isolate\n";
+            return ParseResult::kError;
+        }
+        options->cut = std::strcmp(value, "isolate") == 0 ? 1 : 0;
+    } else if (option == "--digit") {
+        if (std::strcmp(value, "keep") != 0 &&
+            std::strcmp(value, "split") != 0) {
+            std::cerr << "Error: --digit must be keep or split\n";
+            return ParseResult::kError;
+        }
+        options->split_digits = std::strcmp(value, "split") == 0;
+    } else if (option == "--cut") {
+        if (std::strcmp(value, "0") != 0 && std::strcmp(value, "1") != 0) {
+            std::cerr << "Error: --cut must be 0 or 1\n";
+            return ParseResult::kError;
+        }
+        options->cut = value[0] - '0';
+    } else {
+        options->dict = value;
+    }
+    return ParseResult::kHandled;
+}
+
+PreTokenizerSpec MakePreTokenizerSpec(const PreTokenizerOptions& options) {
+    PreTokenizerSpec spec;
+    spec.SetName(options.normalizer);
+    spec.SetCut(options.cut);
+    spec.SetSplitDigits(options.split_digits);
+    spec.SetReconstruct(options.reconstruct);
+    return spec;
+}
+
+template <typename Counter, typename... Args>
+bool CountAndSave(Args&&... args) {
+    Counter counter(std::forward<Args>(args)...);
+    return counter.Count() && counter.Save();
+}
+
 void PrintUsage(const char* prog) {
     std::cerr << "Usage:\n"
               << "  " << prog << " count [options]\n"
@@ -60,13 +160,13 @@ void PrintUsage(const char* prog) {
               << "  --cut <0|1>            Pre-tokenize mode: 0=default, 1=split spaces/punct independently\n"
               << "  --reconstruct          Preserve all spaces (no stripping/merging)\n"
               << "  --max-piece-size <int> Max bytes per learned piece (default: 18, ~6 CJK chars)\n"
-              << "  --cn-dict <file>       Enable CN mode for `piece` method using\n"
+              << "  --dict <file>          Enable CN mode for `piece`/`sentencepiece` using\n"
               << "                         a TSV (word\\tfreq) Unigram dictionary\n"
               << "\nPretokenize/Raw-count options (PreTokenizer 3 axes):\n"
               << "  --normalize <name>     Normalizer: no|NMT_NFKC|NFKC_CF (default: no)\n"
               << "  --split <word|isolate> Split axis: word=GPT-4-style attach, isolate=spaces/punct standalone (default: word)\n"
               << "  --digit <keep|split>   Digit axis: keep runs, or split per-codepoint (default: keep)\n"
-              << "  --cn-dict <no|file>    Cn axis: no=per-char, TSV(word\\tfreq)=dict, omitted=none\n"
+              << "  --dict <no|file>       Cn axis: no=per-char, TSV(word\\tfreq)=dict, omitted=none\n"
               << "  --cut <0|1>            Alias for --split (0=word, 1=isolate)\n"
               << "  --reconstruct          Preserve all spaces (no stripping/merging)\n"
               << "  --input <file>         Input file (repeatable for raw-count)\n"
@@ -75,19 +175,19 @@ void PrintUsage(const char* prog) {
               << "\nTokenize/Encode options:\n"
               << "  --model <file>         Model file to load\n"
               << "  --input <file>         Read input from file instead of stdin\n"
-              << "  --cn-dict <file>       Enable CN mode for `piece` model (must match training)\n"
+              << "  --dict <file>          Enable CN mode (must match training)\n"
               << "\nTokenize/Encode/Decode read from stdin, write to stdout.\n"
               << "Tokenize outputs space-separated pieces per line.\n"
               << "Encode outputs one token per line (piece TAB id).\n"
               << "Decode reads token ids (space-separated) and outputs text.\n";
 }
 
-void RunCount(const std::string& method,
+bool RunCount(const std::string& method,
               const std::vector<std::string>& inputs,
               const std::string& model_prefix, int vocab_size,
               const std::string& normalizer_name, int cpu_count,
               int max_sentences, int min_count, int max_piece_size,
-              const std::string& cn_dict, int cut, bool reconstruct,
+              const std::string& dict, int cut, bool reconstruct,
               const std::vector<std::string>& extra_tokens = {}) {
     CounterSpec counter_spec;
     for (const auto& f : inputs) counter_spec.add_input(f);
@@ -97,27 +197,29 @@ void RunCount(const std::string& method,
     counter_spec.set_max_sentences(max_sentences);
     counter_spec.set_min_count(min_count);
     counter_spec.set_max_piece_size(max_piece_size);
-    counter_spec.set_cn_dict(cn_dict);
+    counter_spec.set_dict(dict);
 
     for (const auto& t : extra_tokens) counter_spec.add_extra_token(t);
 
-    if (!cn_dict.empty() && method != "piece" && method != "sentencepiece") {
-        std::cerr << "Warning: --cn-dict is only supported for --method piece "
+    if (!dict.empty() && method != "piece" && method != "sentencepiece") {
+        std::cerr << "Warning: --dict is only supported for --method piece "
                   << "or --method sentencepiece; ignoring for method=" << method << "\n";
-        counter_spec.set_cn_dict("");
+        counter_spec.set_dict("");
     }
 
-    PreTokenizerSpec pretokenizer_spec;
-    pretokenizer_spec.SetName(normalizer_name);
-    pretokenizer_spec.SetCut(cut);
-    pretokenizer_spec.SetReconstruct(reconstruct);
+    PreTokenizerOptions options;
+    options.normalizer = normalizer_name;
+    options.cut = cut;
+    options.reconstruct = reconstruct;
+    options.dict = dict;
+    PreTokenizerSpec pretokenizer_spec = MakePreTokenizerSpec(options);
 
-    // Single owner of the char-mode policy: cn_dict="no" forces cut=1 +
+    // Single owner of the char-mode policy: dict="no" forces cut=1 +
     // split_digits=true (= Split isolate + Digit split) for every method
     // that supports cn mode, so digits/punct/symbols stay single codepoints
     // and only ASCII-letter runs go through BPE. Persisted to the model so
     // inference matches training.
-    if (counter_spec.cn_dict() == "no") {
+    if (counter_spec.dict() == "no") {
         pretokenizer_spec.SetCut(1);
         pretokenizer_spec.SetSplitDigits(true);
     }
@@ -138,153 +240,86 @@ void RunCount(const std::string& method,
                   << " vocab_size=" << vocab_size << " model=" << model_prefix << "\n";
 
     if (method == "naive") {
-        NaiveCounter counter(counter_spec);
-        counter.Count();
-        counter.Save();
+        if (!CountAndSave<NaiveCounter>(counter_spec)) return false;
     } else if (method == "piece") {
-        PieceCounter counter(counter_spec, pretokenizer_spec);
-        counter.Count();
-        counter.Save();
+        if (!CountAndSave<PieceCounter>(counter_spec, pretokenizer_spec)) return false;
     } else if (method == "sentencepiece") {
-        SentencePieceCounter counter(counter_spec, pretokenizer_spec);
-        counter.Count();
-        counter.Save();
+        if (!CountAndSave<SentencePieceCounter>(counter_spec, pretokenizer_spec))
+            return false;
     } else if (method == "bytepiece") {
-        BytePieceCounter counter(counter_spec, pretokenizer_spec);
-        counter.Count();
-        counter.Save();
+        if (!CountAndSave<BytePieceCounter>(counter_spec, pretokenizer_spec))
+            return false;
     } else {
         std::cerr << "Unknown method: " << method << "\n";
-        return;
+        return false;
     }
 
     std::cerr << "Model saved to " << model_prefix << ".model\n";
+    return true;
 }
 
-void RunEncode(const std::string& model_file, const std::string& cn_dict) {
+template <typename Operation>
+bool WithTokenizer(const std::string& model_file, const std::string& dict,
+                   Operation operation) {
     Model model;
     if (!model.Load(model_file)) {
         std::cerr << "Error: cannot load model: " << model_file << "\n";
-        return;
+        return false;
     }
 
     const std::string& method = model.GetCounterSpec().method();
-    if (!cn_dict.empty() && method != "piece" && method != "sentencepiece") {
-        std::cerr << "Warning: --cn-dict is only supported for --method piece "
+    if (!dict.empty() && method != "piece" && method != "sentencepiece") {
+        std::cerr << "Warning: --dict is only supported for --method piece "
                   << "or --method sentencepiece; ignoring for method=" << method << "\n";
     }
-    std::string line;
     if (method == "naive") {
         NaiveTokenizer tokenizer(model);
-        while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Encode(line);
-            for (const auto& t : tokens) {
-                std::cout << t.first << "\t" << t.second << "\n";
-            }
-            std::cout << "\n";
-        }
+        operation(tokenizer);
     } else if (method == "piece") {
-        PieceTokenizer tokenizer(model, cn_dict);
-        while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Encode(line);
-            for (const auto& t : tokens) {
-                std::cout << t.first << "\t" << t.second << "\n";
-            }
-            std::cout << "\n";
-        }
+        PieceTokenizer tokenizer(model, dict);
+        operation(tokenizer);
     } else if (method == "sentencepiece") {
-        SentencePieceTokenizer tokenizer(model);
-        while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Encode(line);
-            for (const auto& t : tokens) {
-                std::cout << t.first << "\t" << t.second << "\n";
-            }
-            std::cout << "\n";
-        }
+        SentencePieceTokenizer tokenizer(model, dict);
+        operation(tokenizer);
     } else if (method == "bytepiece") {
         BytePieceTokenizer tokenizer(model);
-        while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Encode(line);
-            for (const auto& t : tokens) {
-                std::cout << t.first << "\t" << t.second << "\n";
-            }
-            std::cout << "\n";
-        }
+        operation(tokenizer);
     } else {
         std::cerr << "Unknown method in model: " << method << "\n";
+        return false;
     }
+    return true;
 }
 
-void RunTokenize(const std::string& model_file, const std::string& cn_dict) {
-    Model model;
-    if (!model.Load(model_file)) {
-        std::cerr << "Error: cannot load model: " << model_file << "\n";
-        return;
-    }
-
-    const std::string& method = model.GetCounterSpec().method();
-    if (!cn_dict.empty() && method != "piece" && method != "sentencepiece") {
-        std::cerr << "Warning: --cn-dict is only supported for --method piece "
-                  << "or --method sentencepiece; ignoring for method=" << method << "\n";
-    }
-    std::string line;
-    if (method == "naive") {
-        NaiveTokenizer tokenizer(model);
+bool RunEncode(const std::string& model_file, const std::string& dict) {
+    return WithTokenizer(model_file, dict, [](auto& tokenizer) {
+        std::string line;
         while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Tokenize(line);
-            for (size_t i = 0; i < tokens.size(); ++i) {
-                if (i > 0) std::cout << " ";
-                std::cout << Escape(tokens[i]);
+            for (const auto& token : tokenizer.Encode(line)) {
+                std::cout << token.first << "\t" << token.second << "\n";
             }
             std::cout << "\n";
         }
-    } else if (method == "piece") {
-        PieceTokenizer tokenizer(model, cn_dict);
-        while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Tokenize(line);
-            for (size_t i = 0; i < tokens.size(); ++i) {
-                if (i > 0) std::cout << " ";
-                std::cout << Escape(tokens[i]);
-            }
-            std::cout << "\n";
-        }
-    } else if (method == "sentencepiece") {
-        SentencePieceTokenizer tokenizer(model);
-        while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Tokenize(line);
-            for (size_t i = 0; i < tokens.size(); ++i) {
-                if (i > 0) std::cout << " ";
-                std::cout << Escape(tokens[i]);
-            }
-            std::cout << "\n";
-        }
-    } else if (method == "bytepiece") {
-        BytePieceTokenizer tokenizer(model);
-        while (std::getline(std::cin, line)) {
-            auto tokens = tokenizer.Tokenize(line);
-            for (size_t i = 0; i < tokens.size(); ++i) {
-                if (i > 0) std::cout << " ";
-                std::cout << Escape(tokens[i]);
-            }
-            std::cout << "\n";
-        }
-    } else {
-        std::cerr << "Unknown method in model: " << method << "\n";
-    }
+    });
 }
 
-void RunDecode(const std::string& model_file) {
-    Model model;
-    if (!model.Load(model_file)) {
-        std::cerr << "Error: cannot load model: " << model_file << "\n";
-        return;
-    }
+bool RunTokenize(const std::string& model_file, const std::string& dict) {
+    return WithTokenizer(model_file, dict, [](auto& tokenizer) {
+        std::string line;
+        while (std::getline(std::cin, line)) {
+            auto tokens = tokenizer.Tokenize(line);
+            for (size_t i = 0; i < tokens.size(); ++i) {
+                if (i > 0) std::cout << " ";
+                std::cout << Escape(tokens[i]);
+            }
+            std::cout << "\n";
+        }
+    });
+}
 
-    const std::string& method = model.GetCounterSpec().method();
-
-    std::string line;
-    if (method == "naive") {
-        NaiveTokenizer tokenizer(model);
+bool RunDecode(const std::string& model_file) {
+    return WithTokenizer(model_file, "", [](auto& tokenizer) {
+        std::string line;
         while (std::getline(std::cin, line)) {
             std::vector<int> ids;
             std::istringstream iss(line);
@@ -294,42 +329,7 @@ void RunDecode(const std::string& model_file) {
             }
             std::cout << tokenizer.Decode(ids) << "\n";
         }
-    } else if (method == "piece") {
-        PieceTokenizer tokenizer(model, "");
-        while (std::getline(std::cin, line)) {
-            std::vector<int> ids;
-            std::istringstream iss(line);
-            int id;
-            while (iss >> id) {
-                ids.push_back(id);
-            }
-            std::cout << tokenizer.Decode(ids) << "\n";
-        }
-    } else if (method == "bytepiece") {
-        BytePieceTokenizer tokenizer(model);
-        while (std::getline(std::cin, line)) {
-            std::vector<int> ids;
-            std::istringstream iss(line);
-            int id;
-            while (iss >> id) {
-                ids.push_back(id);
-            }
-            std::cout << tokenizer.Decode(ids) << "\n";
-        }
-    } else if (method == "sentencepiece") {
-        SentencePieceTokenizer tokenizer(model);
-        while (std::getline(std::cin, line)) {
-            std::vector<int> ids;
-            std::istringstream iss(line);
-            int id;
-            while (iss >> id) {
-                ids.push_back(id);
-            }
-            std::cout << tokenizer.Decode(ids) << "\n";
-        }
-    } else {
-        std::cerr << "Unknown method in model: " << method << "\n";
-    }
+    });
 }
 
 } // namespace piece
@@ -354,7 +354,7 @@ int main(int argc, char* argv[]) {
         int max_piece_size = 18;
         int cut = 0;
         bool reconstruct = false;
-        std::string cn_dict;
+        std::string dict;
         std::vector<std::string> extra_tokens;
 
         for (int i = 2; i < argc; i++) {
@@ -364,22 +364,28 @@ int main(int argc, char* argv[]) {
                 inputs.push_back(argv[++i]);
             } else if (std::strcmp(argv[i], "--model") == 0 && i + 1 < argc) {
                 model_prefix = argv[++i];
-            } else if (std::strcmp(argv[i], "--vocab-size") == 0 && i + 1 < argc) {
-                vocab_size = std::atoi(argv[++i]);
+            } else if (std::strcmp(argv[i], "--vocab-size") == 0) {
+                if (!piece::ParseIntegerOption(argc, argv, &i, 1, INT_MAX,
+                                               &vocab_size)) return 1;
             } else if (std::strcmp(argv[i], "--normalize") == 0 && i + 1 < argc) {
                 normalizer = argv[++i];
-            } else if (std::strcmp(argv[i], "--cpu") == 0 && i + 1 < argc) {
-                cpu_count = std::atoi(argv[++i]);
-            } else if (std::strcmp(argv[i], "--max-sentences") == 0 && i + 1 < argc) {
-                max_sentences = std::atoi(argv[++i]);
-            } else if (std::strcmp(argv[i], "--min-count") == 0 && i + 1 < argc) {
-                min_count = std::atoi(argv[++i]);
-            } else if (std::strcmp(argv[i], "--max-piece-size") == 0 && i + 1 < argc) {
-                max_piece_size = std::atoi(argv[++i]);
-            } else if (std::strcmp(argv[i], "--cn-dict") == 0 && i + 1 < argc) {
-                cn_dict = argv[++i];
-            } else if (std::strcmp(argv[i], "--cut") == 0 && i + 1 < argc) {
-                cut = std::atoi(argv[++i]);
+            } else if (std::strcmp(argv[i], "--cpu") == 0) {
+                if (!piece::ParseIntegerOption(argc, argv, &i, 1, INT_MAX,
+                                               &cpu_count)) return 1;
+            } else if (std::strcmp(argv[i], "--max-sentences") == 0) {
+                if (!piece::ParseIntegerOption(argc, argv, &i, 0, INT_MAX,
+                                               &max_sentences)) return 1;
+            } else if (std::strcmp(argv[i], "--min-count") == 0) {
+                if (!piece::ParseIntegerOption(argc, argv, &i, 0, INT_MAX,
+                                               &min_count)) return 1;
+            } else if (std::strcmp(argv[i], "--max-piece-size") == 0) {
+                if (!piece::ParseIntegerOption(argc, argv, &i, 0, INT_MAX,
+                                               &max_piece_size)) return 1;
+            } else if ((std::strcmp(argv[i], "--dict") == 0 ||
+                        std::strcmp(argv[i], "--cn-dict") == 0) && i + 1 < argc) {
+                dict = argv[++i];
+            } else if (std::strcmp(argv[i], "--cut") == 0) {
+                if (!piece::ParseIntegerOption(argc, argv, &i, 0, 1, &cut)) return 1;
             } else if (std::strcmp(argv[i], "--reconstruct") == 0) {
                 reconstruct = true;
             } else if (std::strcmp(argv[i], "--extra-tokens") == 0 && i + 1 < argc) {
@@ -396,29 +402,20 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        piece::RunCount(method, inputs, model_prefix, vocab_size, normalizer, cpu_count, max_sentences, min_count, max_piece_size, cn_dict, cut, reconstruct, extra_tokens);
+        if (!piece::RunCount(method, inputs, model_prefix, vocab_size, normalizer,
+                             cpu_count, max_sentences, min_count, max_piece_size,
+                             dict, cut, reconstruct, extra_tokens)) return 1;
 
     } else if (command == "pretokenize") {
-        std::string normalizer = "no";
-        int cut = 0;
-        bool split_digits = false;
-        bool reconstruct = false;
-        std::string cn_dict;
+        piece::PreTokenizerOptions options;
         std::string input_file;
 
         for (int i = 2; i < argc; i++) {
-            if (std::strcmp(argv[i], "--normalize") == 0 && i + 1 < argc) {
-                normalizer = argv[++i];
-            } else if (std::strcmp(argv[i], "--split") == 0 && i + 1 < argc) {
-                cut = std::strcmp(argv[++i], "isolate") == 0 ? 1 : 0;
-            } else if (std::strcmp(argv[i], "--digit") == 0 && i + 1 < argc) {
-                split_digits = std::strcmp(argv[++i], "split") == 0;
-            } else if (std::strcmp(argv[i], "--cut") == 0 && i + 1 < argc) {
-                cut = std::atoi(argv[++i]);
-            } else if (std::strcmp(argv[i], "--cn-dict") == 0 && i + 1 < argc) {
-                cn_dict = argv[++i];
-            } else if (std::strcmp(argv[i], "--reconstruct") == 0) {
-                reconstruct = true;
+            const auto parsed = piece::ParsePreTokenizerOption(argc, argv, &i, &options);
+            if (parsed == piece::ParseResult::kHandled) {
+                continue;
+            } else if (parsed == piece::ParseResult::kError) {
+                return 1;
             } else if (std::strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
                 input_file = argv[++i];
             } else {
@@ -438,12 +435,8 @@ int main(int argc, char* argv[]) {
             std::cin.rdbuf(file_in.rdbuf());
         }
 
-        piece::PreTokenizerSpec spec;
-        spec.SetName(normalizer);
-        spec.SetCut(cut);
-        spec.SetSplitDigits(split_digits);
-        spec.SetReconstruct(reconstruct);
-        piece::PreTokenizer tokenizer(spec, cn_dict);
+        piece::PreTokenizerSpec spec = piece::MakePreTokenizerSpec(options);
+        piece::PreTokenizer tokenizer(spec, options.dict);
 
         std::string line;
         while (std::getline(std::cin, line)) {
@@ -456,34 +449,24 @@ int main(int argc, char* argv[]) {
         }
 
     } else if (command == "raw-count") {
-        std::string normalizer = "no";
-        int cut = 0;
-        bool split_digits = false;
-        bool reconstruct = false;
-        std::string cn_dict;
+        piece::PreTokenizerOptions options;
         int max_piece_size = 0;
         std::vector<std::string> inputs;
         std::string output_file;
 
         for (int i = 2; i < argc; i++) {
-            if (std::strcmp(argv[i], "--normalize") == 0 && i + 1 < argc) {
-                normalizer = argv[++i];
-            } else if (std::strcmp(argv[i], "--split") == 0 && i + 1 < argc) {
-                cut = std::strcmp(argv[++i], "isolate") == 0 ? 1 : 0;
-            } else if (std::strcmp(argv[i], "--digit") == 0 && i + 1 < argc) {
-                split_digits = std::strcmp(argv[++i], "split") == 0;
-            } else if (std::strcmp(argv[i], "--cut") == 0 && i + 1 < argc) {
-                cut = std::atoi(argv[++i]);
-            } else if (std::strcmp(argv[i], "--cn-dict") == 0 && i + 1 < argc) {
-                cn_dict = argv[++i];
-            } else if (std::strcmp(argv[i], "--reconstruct") == 0) {
-                reconstruct = true;
+            const auto parsed = piece::ParsePreTokenizerOption(argc, argv, &i, &options);
+            if (parsed == piece::ParseResult::kHandled) {
+                continue;
+            } else if (parsed == piece::ParseResult::kError) {
+                return 1;
             } else if (std::strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
                 inputs.push_back(argv[++i]);
             } else if (std::strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
                 output_file = argv[++i];
-            } else if (std::strcmp(argv[i], "--max-piece-size") == 0 && i + 1 < argc) {
-                max_piece_size = std::atoi(argv[++i]);
+            } else if (std::strcmp(argv[i], "--max-piece-size") == 0) {
+                if (!piece::ParseIntegerOption(argc, argv, &i, 0, INT_MAX,
+                                               &max_piece_size)) return 1;
             } else {
                 std::cerr << "Unknown option: " << argv[i] << "\n";
                 piece::PrintUsage(argv[0]);
@@ -491,12 +474,8 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        piece::PreTokenizerSpec spec;
-        spec.SetName(normalizer);
-        spec.SetCut(cut);
-        spec.SetSplitDigits(split_digits);
-        spec.SetReconstruct(reconstruct);
-        piece::PreTokenizer tokenizer(spec, cn_dict);
+        piece::PreTokenizerSpec spec = piece::MakePreTokenizerSpec(options);
+        piece::PreTokenizer tokenizer(spec, options.dict);
 
         std::unordered_map<std::string, int64_t> counts;
         int64_t line_count = 0;
@@ -536,7 +515,8 @@ int main(int argc, char* argv[]) {
         counts.clear();
         std::sort(sorted.begin(), sorted.end(),
                   [](const auto& a, const auto& b) {
-                    return a.second > b.second;
+                    if (a.second != b.second) return a.second > b.second;
+                    return a.first < b.first;
                   });
 
         std::ofstream fout;
@@ -597,15 +577,20 @@ int main(int argc, char* argv[]) {
     } else if (command == "tokenize" || command == "encode" || command == "decode") {
         std::string model_file;
         std::string input_file;
-        std::string cn_dict;
+        std::string dict;
 
         for (int i = 2; i < argc; i++) {
             if (std::strcmp(argv[i], "--model") == 0 && i + 1 < argc) {
                 model_file = argv[++i];
             } else if (std::strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
                 input_file = argv[++i];
-            } else if (std::strcmp(argv[i], "--cn-dict") == 0 && i + 1 < argc) {
-                cn_dict = argv[++i];
+            } else if ((std::strcmp(argv[i], "--dict") == 0 ||
+                        std::strcmp(argv[i], "--cn-dict") == 0) && i + 1 < argc) {
+                dict = argv[++i];
+            } else {
+                std::cerr << "Unknown option: " << argv[i] << "\n";
+                piece::PrintUsage(argv[0]);
+                return 1;
             }
         }
 
@@ -626,11 +611,11 @@ int main(int argc, char* argv[]) {
         }
 
         if (command == "tokenize") {
-            piece::RunTokenize(model_file, cn_dict);
+            if (!piece::RunTokenize(model_file, dict)) return 1;
         } else if (command == "encode") {
-            piece::RunEncode(model_file, cn_dict);
+            if (!piece::RunEncode(model_file, dict)) return 1;
         } else {
-            piece::RunDecode(model_file);
+            if (!piece::RunDecode(model_file)) return 1;
         }
 
     } else {
