@@ -67,6 +67,7 @@ public:
   std::vector<std::string> Tokenize(std::string_view text) const;
   std::string Decode(const std::vector<int>& ids) const;
   std::string Decode(const EncodeResult& rs) const;
+  bool valid() const { return pretokenizer_.valid(); }
 
 private:
   // Core Viterbi-BPE encoding on a single segment (no normalize, no split).

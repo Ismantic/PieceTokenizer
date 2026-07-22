@@ -80,7 +80,7 @@ Each Counter implements `Count()` + `Save()`. Each Tokenizer implements `Encode(
 **CN mode** (`--dict`, supported by `piece` and `sentencepiece` methods) — three values:
 - *(omitted/empty)* — disabled; Han runs go through normal BPE merging (may learn cross-word Chinese N-grams).
 - `--dict no` — **char mode**. Han runs are split per-codepoint so BPE cannot merge across them. **Implicitly forces `cut=1 + split_digits=true`** in the persisted `PreTokenizerSpec` (i.e. Split=isolate + Digit=split): digits also split per-codepoint, punctuation/spaces stand alone, only ASCII-letter runs go through BPE. This forcing lives in a single place — `main.cc RunCount` — and applies uniformly to both `piece` and `sentencepiece`. Designed for char-level backbones / CWS / NER where you want maximum vocab budget for Chinese characters + clean English BPE.
-- `--dict path/to/dict.txt` — **dict mode**. Pre-segments Han runs via an independent Unigram Trie/Viterbi cutter (TSV `word\tfreq`), preventing BPE merges from crossing word boundaries. BytePiece remains a separate tokenizer and has no Chinese-segmentation responsibility.
+- `--dict path/to/dict.txt` — **dict mode**. Pre-segments Han runs via an independent Double-Array Trie + Viterbi Unigram cutter (TSV `word\tfreq`), preventing BPE merges from crossing word boundaries. BytePiece remains a separate tokenizer and has no Chinese-segmentation responsibility.
 
 The `--dict` flag must match between training and inference. `cut` and `split_digits` are persisted in the model so inference auto-applies them; old models lacking the `split_digits` field decode as `false` (backward-compatible).
 

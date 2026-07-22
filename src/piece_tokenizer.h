@@ -28,6 +28,7 @@ public:
   std::string Decode(const std::vector<int>& ids) const;
   std::string Decode(const EncodeResult& rs) const;
   int PieceID(std::string_view piece) const;
+  bool valid() const { return pretokenizer_.valid(); }
 
 private:
   struct PairHash {

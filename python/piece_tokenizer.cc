@@ -32,6 +32,10 @@ public:
             method != "sentencepiece" && method != "bytepiece") {
             return false;
         }
+        if (method == "piece" || method == "sentencepiece") {
+            PreTokenizer pretokenizer(model.GetPreTokenizerSpec(), dict);
+            if (!pretokenizer.valid()) return false;
+        }
 
         tokenizer_ = std::monostate{};
         normalizer_.reset();

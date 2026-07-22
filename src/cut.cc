@@ -136,10 +136,15 @@ std::vector<CnCutter::Match> CnCutter::GetMatches(std::string_view text) const {
             matches.push_back({pos + length - 1, length, fallback_weight_});
         }
 
-        constexpr size_t kMaxResults = 16;
-        new_darts::DoubleArray<int>::ResultPair results[kMaxResults];
-        const size_t count = trie_.commonPrefixSearch(
-            text.data() + pos, results, kMaxResults, size - pos);
+        using Result = new_darts::DoubleArray<int>::ResultPair;
+        std::vector<Result> results(16);
+        size_t count = trie_.commonPrefixSearch(
+            text.data() + pos, results.data(), results.size(), size - pos);
+        if (count > results.size()) {
+            results.resize(count);
+            count = trie_.commonPrefixSearch(
+                text.data() + pos, results.data(), results.size(), size - pos);
+        }
         for (size_t i = 0; i < count; ++i) {
             if (pos + results[i].length <= static_cast<size_t>(size)) {
                 matches.push_back({pos + static_cast<int>(results[i].length) - 1,

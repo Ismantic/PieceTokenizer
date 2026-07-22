@@ -6,7 +6,9 @@
 #include "cut.h"
 #include "normalizer.h"
 #include "piece_spec.h"
+#include "piece_tokenizer.h"
 #include "sentencepiece_tokenizer.h"
+#include "sentencepiece_counter.h"
 #include "test.h"
 
 namespace {
@@ -96,6 +98,25 @@ TEST(SentencePieceTokenizerTest, HonorsSplitDigitPretokenBoundaries) {
     EXPECT_EQ("2", tokens[1]);
 }
 
+TEST(SentencePieceCounterTest, RejectsInvalidDictionary) {
+    piece::CounterSpec counter_spec;
+    counter_spec.set_method("sentencepiece");
+    counter_spec.set_dict("/definitely/missing/piece-tokenizer-dict.txt");
+    piece::PreTokenizerSpec pretokenizer_spec;
+
+    piece::SentencePieceCounter counter(counter_spec, pretokenizer_spec);
+    EXPECT_FALSE(counter.Count());
+}
+
+TEST(TokenizerTest, RejectsInvalidDictionaryAtInference) {
+    piece::Model model;
+    const std::string missing = "/definitely/missing/piece-tokenizer-dict.txt";
+    piece::PieceTokenizer piece_tokenizer(model, missing);
+    piece::SentencePieceTokenizer sentencepiece_tokenizer(model, missing);
+    EXPECT_FALSE(piece_tokenizer.valid());
+    EXPECT_FALSE(sentencepiece_tokenizer.valid());
+}
+
 TEST(BytePieceTokenizerTest, PrefersHigherScoreLongPieces) {
     piece::BytePieceTokenizer tokenizer(MakeEnglishDict());
 
@@ -126,6 +147,69 @@ TEST(CnCutterTest, SegmentsWithoutBytePieceTokenizer) {
     EXPECT_EQ("在", tokens[1]);
     EXPECT_EQ("学习", tokens[2]);
     EXPECT_EQ("人工智能", tokens[3]);
+}
+
+TEST(CnCutterTest, HandlesEmptyAndUnknownHanAtCodepointBoundaries) {
+    piece::CnCutter cutter(MakeChineseDict());
+    EXPECT_TRUE(cutter.Cut("").empty());
+
+    const auto tokens = cutter.Cut("未知𠀀");
+    ASSERT_EQ(3u, tokens.size());
+    EXPECT_EQ("未", tokens[0]);
+    EXPECT_EQ("知", tokens[1]);
+    EXPECT_EQ("𠀀", tokens[2]);
+}
+
+TEST(CnCutterTest, KeepsOptimalCandidateBeyondSixteenPrefixes) {
+    std::unordered_map<std::string, piece::float_t> dict;
+    std::string word = "中";
+    for (int i = 0; i < 20; ++i) {
+        dict[word] = 1.0;
+        word += "人";
+    }
+    dict[word] = 1e12;
+
+    piece::CnCutter cutter(dict);
+    const auto tokens = cutter.Cut(word);
+    ASSERT_EQ(1u, tokens.size());
+    EXPECT_EQ(word, tokens[0]);
+}
+
+TEST(TokenizerTest, PieceAndBytePieceHonorPretokenBoundaries) {
+    piece::Model piece_model;
+    piece_model.GetMutablePreTokenizerSpec()->SetName("no");
+    piece_model.GetMutablePreTokenizerSpec()->SetSpace(" ");
+    piece_model.GetMutablePreTokenizerSpec()->SetCut(1);
+    for (const auto& fields :
+         std::vector<std::vector<std::string>>{
+             {"a", "", ""}, {",", "", ""}, {"b", "", ""},
+             {"a,", "a", ","}}) {
+        piece_model.InsertPieces()->SetPiece(fields[0], fields[1], fields[2]);
+    }
+    piece::PieceTokenizer piece_tokenizer(piece_model);
+    const auto piece_tokens = piece_tokenizer.Tokenize("a,b");
+    ASSERT_EQ(3u, piece_tokens.size());
+    EXPECT_EQ("a", piece_tokens[0]);
+    EXPECT_EQ(",", piece_tokens[1]);
+    EXPECT_EQ("b", piece_tokens[2]);
+
+    piece::Model byte_model;
+    byte_model.GetMutablePreTokenizerSpec()->SetName("no");
+    byte_model.GetMutablePreTokenizerSpec()->SetSpace(" ");
+    byte_model.GetMutablePreTokenizerSpec()->SetCut(1);
+    for (const auto& [text, score] :
+         std::vector<std::pair<std::string, float>>{
+             {"a", 1.0f}, {",", 1.0f}, {"b", 1.0f}, {"a,", 100.0f}}) {
+        auto* token = byte_model.InsertPieces();
+        token->SetPiece(text);
+        token->SetScore(score);
+    }
+    piece::BytePieceTokenizer byte_tokenizer(byte_model);
+    const auto byte_tokens = byte_tokenizer.Tokenize("a,b");
+    ASSERT_EQ(3u, byte_tokens.size());
+    EXPECT_EQ("a", byte_tokens[0]);
+    EXPECT_EQ(",", byte_tokens[1]);
+    EXPECT_EQ("b", byte_tokens[2]);
 }
 
 TEST(NormalizerTest, NmtNfkcNormalizesCompatibilityChars) {

@@ -350,7 +350,10 @@ bool SentencePieceCounter::Count() {
     symbols_cache_.clear();
     active_symbols_.clear();
 
-    LoadSentences();
+    if (!LoadSentences()) {
+        LOG(ERROR) << "Failed to load sentences.";
+        return false;
+    }
 
     const int num_threads = counter_spec_.cpu_count();
 

@@ -277,9 +277,17 @@ bool WithTokenizer(const std::string& model_file, const std::string& dict,
         operation(tokenizer);
     } else if (method == "piece") {
         PieceTokenizer tokenizer(model, dict);
+        if (!tokenizer.valid()) {
+            std::cerr << "Error: cannot load dictionary: " << dict << "\n";
+            return false;
+        }
         operation(tokenizer);
     } else if (method == "sentencepiece") {
         SentencePieceTokenizer tokenizer(model, dict);
+        if (!tokenizer.valid()) {
+            std::cerr << "Error: cannot load dictionary: " << dict << "\n";
+            return false;
+        }
         operation(tokenizer);
     } else if (method == "bytepiece") {
         BytePieceTokenizer tokenizer(model);
