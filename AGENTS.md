@@ -4,6 +4,8 @@
 
 Core C++17 code lives in `src/` under the `piece` namespace. Training and inference implementations are organized as `{method}_counter.{h,cc}` and `{method}_tokenizer.{h,cc}` for `naive`, `piece`, `sentencepiece`, and `bytepiece`. Shared normalization, pre-tokenization, model serialization, and UTF-8 utilities also live in `src/`. The CLI entry point is `src/main.cc`.
 
+`README.md` contains project usage and links to the canonical conceptual chapters in the Text book. Do not add duplicate long-form tutorials to this repository.
+
 Tests use the lightweight framework in `src/test.{h,cc}` and are currently collected in `src/tokenizer_test.cc` and `src/ustr_test.cc`. Python bindings are in `python/`, training recipes are in `scripts/`, and example dictionaries and saved tokenizer artifacts are at the repository root and in `save/`.
 
 ## Build, Test, and Development Commands

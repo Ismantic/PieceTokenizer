@@ -142,6 +142,13 @@ tok.vocab_size(); tok.method
 
 Byte-level BPE 的单个 piece 可能只是 UTF-8 字符的一部分，因此不保证能表示为 Python `str`。`encode()`、`encode_as_pieces()` 适用于 UTF-8 完整的 piece；处理任意文本或检查词表时，使用 `encode_bytes()`、`encode_as_piece_bytes()` 和 `id_to_piece_bytes()` 获取无损字节。
 
+## 原理文档
+
+完整的训练与编码原理统一收录在《底层实现：文本处理》：
+
+- [Tokenizer：SentencePiece](https://ismantic.github.io/text/tokenizer-1.html)
+- [Tokenizer：BytePiece](https://ismantic.github.io/text/tokenizer-2.html)
+
 ## License
 
 MIT
