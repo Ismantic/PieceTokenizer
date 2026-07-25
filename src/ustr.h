@@ -101,16 +101,10 @@ inline int PieceToByte(std::string_view piece) {
 
 bool IsDigitToken(std::string_view text);
 
-// Returns true if the codepoint is a "word" character: a letter from any
-// script (Latin, Greek, Cyrillic, Arabic, CJK, Hangul, ...), a digit, a
-// CJK ideograph, or a combining mark that continues a word. Used by
-// SplitText to group contiguous word characters into runs.
+// Letters, digits, ideographs, and combining marks that continue a word.
 bool IsWordChar(uint32_t cp);
 
-// Returns true if `cp` is a Han (CJK) ideograph. Covers CJK Unified
-// Ideographs, Extension A, Extensions B-H in the supplementary plane,
-// and CJK Compatibility Ideographs. Used by cn-mode post-processing
-// to detect runs of Chinese characters.
+// CJK Unified, Extension A/B-H, and Compatibility ideographs.
 bool IsHan(uint32_t cp);
 
 inline bool IsDigitCodepoint(uint32_t cp) {
@@ -121,9 +115,6 @@ inline bool IsDigitCodepoint(uint32_t cp) {
 
 bool IsPunctuationToken(std::string_view text);
 
-// A "separator" is any codepoint that breaks a word run: punctuation or
-// symbol. Digits are NOT separators -- they belong to the word class and
-// are grouped with adjacent letters by SplitText.
 inline bool IsSeparatorToken(std::string_view text) {
   return IsPunctuationToken(text);
 }
@@ -131,22 +122,8 @@ inline bool IsSeparatorToken(std::string_view text) {
 std::vector<std::string_view> SplitText(std::string_view text, std::string_view space,
                                         int cut = 0);
 
-// CN-mode variant of SplitText. After running normal SplitText, each
-// resulting piece is further split at Han / non-Han boundaries: Han
-// runs are passed through `cn_cut` (a Unigram word segmenter), non-Han
-// runs are kept verbatim. A leading space sentinel inside a piece is
-// peeled off as a standalone token if (and only if) the piece would
-// otherwise attach the space to a Han character — Han words never
-// carry an attached space prefix.
-//
-// `cn_cut` may be empty: then Han runs are kept whole (Cn=none), and the
-// function still applies `split_digits`. So with an empty `cn_cut` and
-// split_digits=false it is exactly SplitText (only re-typed to owned
-// strings). This makes it the single split entry covering every
-// (cut, split_digits, cn) combination.
-//
-// Returns owned strings (not views into `text`) because cutter outputs
-// are owned strings.
+// Applies optional Han segmentation and per-codepoint digit splitting.
+// Results are owned because `cn_cut` returns owned strings.
 using CnCutFn = std::function<std::vector<std::string>(std::string_view)>;
 std::vector<std::string> SplitTextCn(std::string_view text,
                                      std::string_view space,

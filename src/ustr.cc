@@ -124,7 +124,6 @@ bool IsDigitToken(std::string_view text) {
     return false;
 }
 
-// Whitespace codepoints per Unicode (subset sufficient for pre-normalized text).
 static bool IsWhitespaceCodepoint(uint32_t cp) {
     if (cp >= 0x09 && cp <= 0x0D) return true;   // \t \n \v \f \r
     if (cp == 0x20) return true;                 // space
@@ -254,22 +253,7 @@ bool IsPunctuationToken(std::string_view text) {
     return true;
 }
 
-// Pre-tokenizes text into runs, with behavior modeled after rustbpe's
-// GPT-4 regex (`[^\r\n\p{L}\p{N}]?+\p{L}+ | \p{N}{1,3} | ?[^\s\p{L}\p{N}]++...`).
-// Rules:
-//   1. Word runs are maximal sequences of word characters (letters, digits,
-//      CJK, ...). A single space may attach as a prefix to the run.
-//   2. Punct runs are maximal sequences of non-word non-space characters.
-//      A single space may attach as a prefix. Additionally, exactly 1 punct
-//      char immediately before a word run is absorbed into that word run
-//      as a prefix (only when no pending space is waiting).
-//   3. Consecutive spaces: N-1 spaces become standalone tokens; the last
-//      space attaches to the following run.
-// Assumes the normalizer has already stripped leading/trailing whitespace
-// and replaced ' ' with the `space` sentinel (which may be multi-byte).
-// Pre-tokenize text into runs.
-//
-// cut=0 (default): equivalent to the following regex with FindAll:
+// Pre-tokenizes normalized text into runs. With cut=0, the behavior is:
 //
 //   [^\r\n\p{A}\p{H}\p{N}]?\p{A}+   letters (optional space/punct prefix)
 //   |\p{H}+                          Han run (no prefix)
@@ -278,13 +262,8 @@ bool IsPunctuationToken(std::string_view text) {
 //   |\s*[\r\n]                       newline
 //   |\s                              single whitespace
 //
-// where \p{A}=alpha (non-Han non-digit), \p{H}=Han, \p{N}=digit.
-// Differences from GPT-4 regex:
-//   - \p{N}+ instead of \p{N}{1,3} (no digit length limit)
-//   - \p{H}+ separate from \p{A}+ (Han never carries space prefix)
-//   - \s instead of \s+(?!\S)|\s+ (each extra space is standalone)
-//
-// cut=1: no prefix attachment, every space/punct is independent:
+// Here \p{A}=non-Han non-digit letters. With cut=1, spaces and
+// punctuation are independent:
 //
 //   \p{A}('\p{A})*                    letters (apostrophe between letters kept)
 //   |\p{H}+                           Han run
@@ -300,48 +279,40 @@ std::vector<std::string_view> SplitText(std::string_view text,
     const char* end = text.data() + text.size();
     if (begin >= end) return result;
 
-    // cut=1: spaces and punctuation each become independent tokens.
-    // Letters, digits, and Han also form separate runs (same as cut=0).
-    if (cut == 1) {
-        enum Kind1 { kSpace1, kLetter1, kDigit1, kHan1, kPunct1 };
-        auto classify1 = [&](const char* p, int len) -> Kind1 {
-            std::string_view c(p, len);
-            if (c == space) return kSpace1;
-            size_t mblen = 0;
-            const uint32_t cp = DecodeUTF8(p, end, &mblen);
-            if (IsHan(cp)) return kHan1;
-            if (IsDigitCodepoint(cp)) return kDigit1;
-            if (IsWordChar(cp)) return kLetter1;
-            return kPunct1;
-        };
-        auto char_len1 = [&](const char* p) -> int {
-            return std::min<int>(OneUTF8Size(p), end - p);
-        };
+    enum Kind { kSpace, kLetter, kDigit, kHan, kPunct };
+    auto char_len = [&](const char* p) -> int {
+        return std::min<int>(OneUTF8Size(p), end - p);
+    };
+    auto classify = [&](const char* p, int len) -> Kind {
+        if (std::string_view(p, len) == space) return kSpace;
+        size_t mblen = 0;
+        const uint32_t cp = DecodeUTF8(p, end, &mblen);
+        if (IsHan(cp)) return kHan;
+        if (IsDigitCodepoint(cp)) return kDigit;
+        if (IsWordChar(cp)) return kLetter;
+        return kPunct;
+    };
 
+    if (cut == 1) {
         const char* p = begin;
         while (p < end) {
-            const int clen = char_len1(p);
-            const Kind1 kind = classify1(p, clen);
+            const int clen = char_len(p);
+            const Kind kind = classify(p, clen);
 
-            if (kind == kSpace1 || kind == kPunct1) {
-                // Space and punctuation → each standalone token.
+            if (kind == kSpace || kind == kPunct) {
                 result.emplace_back(p, clen);
                 p += clen;
             } else {
-                // Letter/Digit/Han → consume same-kind run.
-                // For letter runs: apostrophe between letters is not a break
-                // (keeps contractions like don't, they'll intact).
                 const char* run_start = p;
                 p += clen;
                 while (p < end) {
-                    const int wlen = char_len1(p);
-                    Kind1 wkind = classify1(p, wlen);
+                    const int wlen = char_len(p);
+                    const Kind wkind = classify(p, wlen);
                     if (wkind == kind) { p += wlen; continue; }
-                    // Apostrophe inside letter run: peek ahead.
-                    if (kind == kLetter1 && *p == '\'' && p + 1 < end) {
-                        const int nlen = char_len1(p + 1);
-                        if (classify1(p + 1, nlen) == kLetter1) {
-                            p += 1 + nlen;  // consume ' + next letter
+                    if (kind == kLetter && *p == '\'' && p + 1 < end) {
+                        const int nlen = char_len(p + 1);
+                        if (classify(p + 1, nlen) == kLetter) {
+                            p += 1 + nlen;
                             continue;
                         }
                     }
@@ -352,26 +323,6 @@ std::vector<std::string_view> SplitText(std::string_view text,
         }
         return result;
     }
-
-    auto char_len = [&](const char* p) -> int {
-        return std::min<int>(ustr::OneUTF8Size(p), end - p);
-    };
-
-    // Classification aligned with GPT-4 regex, except:
-    // - Digits have no length limit (GPT-4 limits to 1-3)
-    // - Han chars form separate runs (GPT-4 groups all \p{L} together)
-    // - Space does not attach to Han or Digit runs
-    enum Kind { kSpace, kLetter, kDigit, kHan, kPunct };
-    auto classify = [&](const char* p, int len) -> Kind {
-        std::string_view c(p, len);
-        if (c == space) return kSpace;
-        size_t mblen = 0;
-        const uint32_t cp = DecodeUTF8(p, end, &mblen);
-        if (IsHan(cp)) return kHan;
-        if (IsDigitCodepoint(cp)) return kDigit;
-        if (IsWordChar(cp)) return kLetter;
-        return kPunct;
-    };
 
     const char* pending_space = nullptr;
     int pending_space_len = 0;
@@ -401,30 +352,14 @@ std::vector<std::string_view> SplitText(std::string_view text,
             continue;
         }
 
-        if (kind == kDigit) {
-            // Space does NOT attach to digit runs.
+        if (kind == kDigit || kind == kHan) {
             if (pending_space) {
                 result.emplace_back(pending_space, pending_space_len);
                 pending_space = nullptr;
             }
             const char* run_start = begin;
             const char* run_end = begin;
-            while (run_end < end && classify(run_end, char_len(run_end)) == kDigit)
-                run_end += char_len(run_end);
-            result.emplace_back(run_start, run_end - run_start);
-            begin = run_end;
-            continue;
-        }
-
-        if (kind == kHan) {
-            // Space does NOT attach to Han runs.
-            if (pending_space) {
-                result.emplace_back(pending_space, pending_space_len);
-                pending_space = nullptr;
-            }
-            const char* run_start = begin;
-            const char* run_end = begin;
-            while (run_end < end && classify(run_end, char_len(run_end)) == kHan)
+            while (run_end < end && classify(run_end, char_len(run_end)) == kind)
                 run_end += char_len(run_end);
             result.emplace_back(run_start, run_end - run_start);
             begin = run_end;
