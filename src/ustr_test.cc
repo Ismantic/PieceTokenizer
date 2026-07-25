@@ -1,9 +1,12 @@
 #include "ustr.h"
 
 #include "common.h"
+#include "regex_tokenizer.h"
 #include "test.h"
 
+#include <atomic>
 #include <iostream>
+#include <thread>
 
 namespace ustr {
 
@@ -393,6 +396,41 @@ TEST(UstrTest, SplitTextHelloSpaceCommaWorld) {
     EXPECT_EQ(std::string("hello"), std::string(r[0]));
     EXPECT_EQ(std::string(kSp) + ",", std::string(r[1]));
     EXPECT_EQ(std::string("world"), std::string(r[2]));
+}
+
+TEST(UstrTest, FrozenRegexSupportsConcurrentSplit) {
+    const std::string input = "hello▁,world123你好🙂done";
+    const std::vector<std::string_view> expected = {
+        "hello", "▁,", "world", "123", "你好", "🙂done",
+    };
+    const regex::TokenizerRegex tokenizer(kSp);
+    std::atomic<bool> ok(true);
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 8; ++i) {
+        threads.emplace_back([&] {
+            for (int repeat = 0; repeat < 1000; ++repeat) {
+                if (tokenizer.Split(input) != expected) ok = false;
+            }
+        });
+    }
+    for (auto& thread : threads) thread.join();
+    EXPECT_TRUE(ok);
+}
+
+TEST(UstrTest, RegexEscapesConfigurableSpaceMetacharacters) {
+    for (const std::string space : {"*", "]", "\\", "^"}) {
+        const std::string input = "a" + space + space + "b";
+        const auto pieces = SplitText(input, space);
+        ASSERT_EQ(3u, pieces.size());
+        EXPECT_EQ("a", pieces[0]);
+        EXPECT_EQ(space, pieces[1]);
+        EXPECT_EQ(space + "b", pieces[2]);
+    }
+}
+
+TEST(UstrTest, UnknownCutValueUsesDefaultMode) {
+    const auto expected = SplitText("hello,world", kSp, 0);
+    EXPECT_EQ(expected, SplitText("hello,world", kSp, 2));
 }
 
 } // namespace ustr

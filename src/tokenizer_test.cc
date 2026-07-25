@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -250,6 +251,28 @@ TEST(TrieTest, EmptyAndMalformedArraysReturnMisses) {
     EXPECT_EQ(-1, trie.exactMatchSearch<int>("a"));
     EXPECT_EQ(0u, trie.commonPrefixSearch("a", results, 1));
     EXPECT_EQ(-2, trie.traverse("a", node_pos, key_pos));
+}
+
+TEST(TrieTest, SavesAndLoadsAtOffset) {
+    const std::vector<std::string> keys = {"a", "ab", "世界"};
+    const std::vector<const char*> pointers = {
+        keys[0].c_str(), keys[1].c_str(), keys[2].c_str(),
+    };
+    const int values[] = {10, 20, 30};
+    trie::DoubleArray<int> source;
+    ASSERT_EQ(0, source.build(
+        pointers.size(), pointers.data(), nullptr, values));
+
+    const std::string path = "/tmp/piece-tokenizer-trie-offset-test.bin";
+    constexpr std::size_t kOffset = 16;
+    ASSERT_EQ(0, source.save(path, "wb", kOffset));
+
+    trie::DoubleArray<int> loaded;
+    ASSERT_EQ(0, loaded.open(path, "rb", kOffset, source.total_size()));
+    EXPECT_EQ(10, loaded.exactMatchSearch<int>("a"));
+    EXPECT_EQ(20, loaded.exactMatchSearch<int>("ab"));
+    EXPECT_EQ(30, loaded.exactMatchSearch<int>("世界"));
+    std::remove(path.c_str());
 }
 
 TEST(ModelTest, RejectsMissingAndEmptyModels) {

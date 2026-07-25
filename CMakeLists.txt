@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(LIB_SRCS
+    src/regex_tokenizer.cc
     src/ustr.cc
     src/sentence.cc
     src/sentencepiece_counter.cc

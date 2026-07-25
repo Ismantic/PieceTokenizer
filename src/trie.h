@@ -2,6 +2,7 @@
 #define PIECE_TRIE_H_
 
 #include <array>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -330,7 +331,12 @@ int DoubleArray<T>::open(const std::string& filename,
             std::fclose(file);
             return -1;
         }
-        size = std::ftell(file) - offset;
+        const long end = std::ftell(file);
+        if (end < 0 || offset > static_cast<std::size_t>(end)) {
+            std::fclose(file);
+            return -1;
+        }
+        size = static_cast<std::size_t>(end) - offset;
     }
 
     size /= unit_size();
@@ -404,6 +410,12 @@ int DoubleArray<T>::save(const std::string& filename,
         return -1;
     }
 
+    if (offset > static_cast<std::size_t>(LONG_MAX) ||
+        (offset != 0 &&
+         std::fseek(file, static_cast<long>(offset), SEEK_SET) != 0)) {
+        std::fclose(file);
+        return -1;
+    }
     if (std::fwrite(array_, unit_size(), size(), file) != size()) {
         std::fclose(file);
         return -1;

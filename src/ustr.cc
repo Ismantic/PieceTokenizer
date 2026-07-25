@@ -1,5 +1,7 @@
 #include "ustr.h"
 
+#include "regex_tokenizer.h"
+
 namespace ustr {
 
 // mblen stores the number of bytes consumed after decoding.
@@ -253,151 +255,25 @@ bool IsPunctuationToken(std::string_view text) {
     return true;
 }
 
-// Pre-tokenizes normalized text into runs. With cut=0, the behavior is:
-//
-//   [^\r\n\p{A}\p{H}\p{N}]?\p{A}+   letters (optional space/punct prefix)
-//   |\p{H}+                          Han run (no prefix)
-//   |\p{N}+                          digit run (no prefix)
-//   | ?[^\s\p{A}\p{H}\p{N}]+[\r\n]* punct run (optional space prefix)
-//   |\s*[\r\n]                       newline
-//   |\s                              single whitespace
-//
-// Here \p{A}=non-Han non-digit letters. With cut=1, spaces and
-// punctuation are independent:
-//
-//   \p{A}('\p{A})*                    letters (apostrophe between letters kept)
-//   |\p{H}+                           Han run
-//   |\p{N}+                           digit run
-//   |[^\s\p{A}\p{H}\p{N}]            single punct/symbol
-//   |\s                               single whitespace
-//
 std::vector<std::string_view> SplitText(std::string_view text,
                                         std::string_view space,
                                         int cut) {
-    std::vector<std::string_view> result;
-    const char* begin = text.data();
-    const char* end = text.data() + text.size();
-    if (begin >= end) return result;
-
-    enum Kind { kSpace, kLetter, kDigit, kHan, kPunct };
-    auto char_len = [&](const char* p) -> int {
-        return std::min<int>(OneUTF8Size(p), end - p);
+    struct CachedTokenizer {
+        std::string space;
+        int cut;
+        std::unique_ptr<regex::TokenizerRegex> tokenizer;
     };
-    auto classify = [&](const char* p, int len) -> Kind {
-        if (std::string_view(p, len) == space) return kSpace;
-        size_t mblen = 0;
-        const uint32_t cp = DecodeUTF8(p, end, &mblen);
-        if (IsHan(cp)) return kHan;
-        if (IsDigitCodepoint(cp)) return kDigit;
-        if (IsWordChar(cp)) return kLetter;
-        return kPunct;
-    };
-
-    if (cut == 1) {
-        const char* p = begin;
-        while (p < end) {
-            const int clen = char_len(p);
-            const Kind kind = classify(p, clen);
-
-            if (kind == kSpace || kind == kPunct) {
-                result.emplace_back(p, clen);
-                p += clen;
-            } else {
-                const char* run_start = p;
-                p += clen;
-                while (p < end) {
-                    const int wlen = char_len(p);
-                    const Kind wkind = classify(p, wlen);
-                    if (wkind == kind) { p += wlen; continue; }
-                    if (kind == kLetter && *p == '\'' && p + 1 < end) {
-                        const int nlen = char_len(p + 1);
-                        if (classify(p + 1, nlen) == kLetter) {
-                            p += 1 + nlen;
-                            continue;
-                        }
-                    }
-                    break;
-                }
-                result.emplace_back(run_start, p - run_start);
-            }
+    thread_local std::vector<CachedTokenizer> tokenizers;
+    for (const auto& cached : tokenizers) {
+        if (cached.cut == cut && cached.space == space) {
+            return cached.tokenizer->Split(text);
         }
-        return result;
     }
-
-    const char* pending_space = nullptr;
-    int pending_space_len = 0;
-
-    while (begin < end) {
-        const int clen = char_len(begin);
-        const Kind kind = classify(begin, clen);
-
-        if (kind == kSpace) {
-            if (pending_space != nullptr)
-                result.emplace_back(pending_space, pending_space_len);
-            pending_space = begin;
-            pending_space_len = clen;
-            begin += clen;
-            continue;
-        }
-
-        if (kind == kLetter) {
-            // Space attaches as prefix to letter runs.
-            const char* run_start = pending_space ? pending_space : begin;
-            pending_space = nullptr;
-            const char* run_end = begin;
-            while (run_end < end && classify(run_end, char_len(run_end)) == kLetter)
-                run_end += char_len(run_end);
-            result.emplace_back(run_start, run_end - run_start);
-            begin = run_end;
-            continue;
-        }
-
-        if (kind == kDigit || kind == kHan) {
-            if (pending_space) {
-                result.emplace_back(pending_space, pending_space_len);
-                pending_space = nullptr;
-            }
-            const char* run_start = begin;
-            const char* run_end = begin;
-            while (run_end < end && classify(run_end, char_len(run_end)) == kind)
-                run_end += char_len(run_end);
-            result.emplace_back(run_start, run_end - run_start);
-            begin = run_end;
-            continue;
-        }
-
-        // kind == kPunct
-        // Punct-as-prefix: one punct char absorbs into a following letter run
-        // (matches GPT-4 pattern 2: [^\r\n\p{L}\p{N}]?\p{L}+).
-        // Only when no pending space, and only for letter runs (not digit/Han).
-        if (pending_space == nullptr && begin + clen < end) {
-            const int nlen = char_len(begin + clen);
-            if (classify(begin + clen, nlen) == kLetter) {
-                const char* run_start = begin;
-                const char* run_end = begin + clen;
-                while (run_end < end && classify(run_end, char_len(run_end)) == kLetter)
-                    run_end += char_len(run_end);
-                result.emplace_back(run_start, run_end - run_start);
-                begin = run_end;
-                continue;
-            }
-        }
-
-        // Regular punct run. Space attaches as prefix to punct runs
-        // (matches GPT-4 pattern 4: ` ?[^\s\p{L}\p{N}]++`).
-        const char* run_start = pending_space ? pending_space : begin;
-        pending_space = nullptr;
-        const char* run_end = begin;
-        while (run_end < end && classify(run_end, char_len(run_end)) == kPunct)
-            run_end += char_len(run_end);
-        result.emplace_back(run_start, run_end - run_start);
-        begin = run_end;
-    }
-
-    if (pending_space != nullptr)
-        result.emplace_back(pending_space, pending_space_len);
-
-    return result;
+    tokenizers.push_back({
+        std::string(space), cut,
+        std::make_unique<regex::TokenizerRegex>(space, cut),
+    });
+    return tokenizers.back().tokenizer->Split(text);
 }
 
 std::vector<std::string> SplitTextCn(std::string_view text,
