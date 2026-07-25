@@ -234,6 +234,24 @@ TEST(NormalizerTest, CompiledMapRoundTripsThroughNewTrie) {
     EXPECT_EQ(expected, actual);
 }
 
+TEST(TrieTest, EmptyAndMalformedArraysReturnMisses) {
+    trie::DoubleArray<int> trie;
+    EXPECT_EQ(-1, trie.exactMatchSearch<int>("a"));
+
+    trie::DoubleArray<int>::ResultPair results[1];
+    EXPECT_EQ(0u, trie.commonPrefixSearch("a", results, 1));
+
+    std::size_t node_pos = 0;
+    std::size_t key_pos = 0;
+    EXPECT_EQ(-2, trie.traverse("a", node_pos, key_pos));
+
+    const uint32_t malformed[] = {0xFFFFFFFFu};
+    trie.set_array(malformed, 1);
+    EXPECT_EQ(-1, trie.exactMatchSearch<int>("a"));
+    EXPECT_EQ(0u, trie.commonPrefixSearch("a", results, 1));
+    EXPECT_EQ(-2, trie.traverse("a", node_pos, key_pos));
+}
+
 TEST(ModelTest, RejectsMissingAndEmptyModels) {
     piece::Model model;
     EXPECT_FALSE(model.Load("/definitely/missing/piece-tokenizer.model"));

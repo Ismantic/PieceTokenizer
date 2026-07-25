@@ -1,25 +1,18 @@
-#ifndef NEW_DARTS_H_
-#define NEW_DARTS_H_
+#ifndef PIECE_TRIE_H_
+#define PIECE_TRIE_H_
 
 #include <array>
-#include <cstdint>
 #include <cstddef>
-#include <fstream>
+#include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <vector>
 #include <functional>
-#include <algorithm>
-#include <bit>
 
-// 版本信息
-constexpr auto NEW_DARTS_VERSION = "1.0.0";
+namespace trie {
 
-namespace new_darts {
-
-// 自定义异常类
 class Exception : public std::runtime_error {
 public:
     explicit Exception(const std::string& message)
@@ -28,16 +21,13 @@ public:
 };
 
 namespace detail {
-    // 核心类型定义
     using char_type = char;
     using uchar_type = uint8_t;
     using value_type = int32_t;
     using id_type = uint32_t;
     
-    // 定义进度回调函数类型
     using progress_func_type = std::function<int(std::size_t, std::size_t)>;
 
-    // DoubleArrayUnit类，封装了双数组节点的结构
     class DoubleArrayUnit {
     public:
         DoubleArrayUnit() : unit_(0) {}
@@ -63,9 +53,8 @@ namespace detail {
 
         friend class DoubleArrayBuilderUnit;
     };
-} // namespace detail
+}  // namespace detail
 
-// 面向使用者的DoubleArray类模板，T为值类型
 template <typename T = int32_t>
 class DoubleArray {
 public:
@@ -73,7 +62,6 @@ public:
     using key_type = detail::char_type;
     using result_type = value_type;
 
-    // 结果对类型，存储值和长度信息
     struct ResultPair {
         value_type value;
         std::size_t length;
@@ -84,7 +72,6 @@ public:
         clear();
     }
 
-    // 移动构造和赋值
     DoubleArray(DoubleArray&& other) noexcept 
         : size_(other.size_), array_(other.array_), buf_(other.buf_) {
         other.size_ = 0;
@@ -105,34 +92,28 @@ public:
         return *this;
     }
 
-    // 禁止复制
     DoubleArray(const DoubleArray&) = delete;
     DoubleArray& operator=(const DoubleArray&) = delete;
 
-    // 设置单个结果
     void set_result(value_type* result, value_type value, std::size_t) const {
         *result = value;
     }
 
-    // 设置结果对
     void set_result(ResultPair* result, value_type value, std::size_t length) const {
         result->value = value;
         result->length = length;
     }
 
-    // 设置数组
     void set_array(const void* ptr, std::size_t size = 0) {
         clear();
         array_ = static_cast<const detail::DoubleArrayUnit*>(ptr);
         size_ = size;
     }
 
-    // 获取数组指针
     const void* array() const noexcept {
         return array_;
     }
 
-    // 清理资源
     void clear() {
         size_ = 0;
         array_ = nullptr;
@@ -140,45 +121,37 @@ public:
         buf_ = nullptr;
     }
 
-    // 返回单元大小
     std::size_t unit_size() const noexcept {
         return sizeof(detail::DoubleArrayUnit);
     }
 
-    // 返回单元数量
     std::size_t size() const noexcept {
         return size_;
     }
 
-    // 返回总字节大小
     std::size_t total_size() const noexcept {
         return unit_size() * size();
     }
 
-    // 返回非零单元数量（兼容性函数）
     std::size_t nonzero_size() const noexcept {
         return size();
     }
 
-    // 构建双数组
     int build(std::size_t num_keys, 
               const key_type* const* keys,
               const std::size_t* lengths = nullptr, 
               const value_type* values = nullptr,
               detail::progress_func_type progress_func = nullptr);
 
-    // 从文件加载双数组
     int open(const std::string& filename, 
              const std::string& mode = "rb",
              std::size_t offset = 0, 
              std::size_t size = 0);
     
-    // 保存双数组到文件
     int save(const std::string& filename, 
              const std::string& mode = "wb",
              std::size_t offset = 0) const;
 
-    // 精确匹配搜索，更新result参数
     template <typename U>
     void exactMatchSearch(const key_type* key, U& result,
                          std::size_t length = 0, 
@@ -186,13 +159,11 @@ public:
         result = exactMatchSearch<U>(key, length, node_pos);
     }
 
-    // 精确匹配搜索，返回结果
     template <typename U>
     U exactMatchSearch(const key_type* key, 
                      std::size_t length = 0,
                      std::size_t node_pos = 0) const;
 
-    // 公共前缀搜索
     template <typename U>
     std::size_t commonPrefixSearch(const key_type* key, 
                                  U* results,
@@ -200,7 +171,6 @@ public:
                                  std::size_t length = 0,
                                  std::size_t node_pos = 0) const;
 
-    // 遍历查找
     value_type traverse(const key_type* key, 
                       std::size_t& node_pos,
                       std::size_t& key_pos, 
@@ -216,7 +186,6 @@ private:
     unit_type* buf_;
 };
 
-// 精确匹配搜索实现
 template <typename T>
 template <typename U>
 U DoubleArray<T>::exactMatchSearch(const key_type* key,
@@ -225,34 +194,38 @@ U DoubleArray<T>::exactMatchSearch(const key_type* key,
     U result;
     set_result(&result, static_cast<value_type>(-1), 0);
 
-    unit_type unit = array_[node_pos];
-    if (length != 0) {
-        for (std::size_t i = 0; i < length; ++i) {
-            node_pos ^= unit.offset() ^ static_cast<uchar_type>(key[i]);
-            unit = array_[node_pos];
-            if (unit.label() != static_cast<uchar_type>(key[i])) {
-                return result;
-            }
+    if (array_ == nullptr || node_pos >= size_) {
+        return result;
+    }
+    if (length == 0) {
+        while (key[length] != '\0') {
+            ++length;
         }
-    } else {
-        for (; key[length] != '\0'; ++length) {
-            node_pos ^= unit.offset() ^ static_cast<uchar_type>(key[length]);
-            unit = array_[node_pos];
-            if (unit.label() != static_cast<uchar_type>(key[length])) {
-                return result;
-            }
+    }
+    unit_type unit = array_[node_pos];
+    for (std::size_t i = 0; i < length; ++i) {
+        node_pos ^= unit.offset() ^ static_cast<uchar_type>(key[i]);
+        if (node_pos >= size_) {
+            return result;
+        }
+        unit = array_[node_pos];
+        if (unit.label() != static_cast<uchar_type>(key[i])) {
+            return result;
         }
     }
 
     if (!unit.has_leaf()) {
         return result;
     }
-    unit = array_[node_pos ^ unit.offset()];
+    node_pos ^= unit.offset();
+    if (node_pos >= size_) {
+        return result;
+    }
+    unit = array_[node_pos];
     set_result(&result, static_cast<value_type>(unit.value()), length);
     return result;
 }
 
-// 公共前缀搜索实现
 template <typename T>
 template <typename U>
 std::size_t DoubleArray<T>::commonPrefixSearch(const key_type* key, 
@@ -262,48 +235,45 @@ std::size_t DoubleArray<T>::commonPrefixSearch(const key_type* key,
                                             std::size_t node_pos) const {
     std::size_t num_results = 0;
 
+    if (array_ == nullptr || node_pos >= size_) {
+        return num_results;
+    }
+    if (length == 0) {
+        while (key[length] != '\0') {
+            ++length;
+        }
+    }
     unit_type unit = array_[node_pos];
     node_pos ^= unit.offset();
-    if (length != 0) {
-        for (std::size_t i = 0; i < length; ++i) {
-            node_pos ^= static_cast<uchar_type>(key[i]);
-            unit = array_[node_pos];
-            if (unit.label() != static_cast<uchar_type>(key[i])) {
-                return num_results;
-            }
-
-            node_pos ^= unit.offset();
-            if (unit.has_leaf()) {
-                if (num_results < max_num_results) {
-                    set_result(&results[num_results], static_cast<value_type>(
-                        array_[node_pos].value()), i + 1);
-                }
-                ++num_results;
-            }
+    if (node_pos >= size_) {
+        return num_results;
+    }
+    for (std::size_t i = 0; i < length; ++i) {
+        node_pos ^= static_cast<uchar_type>(key[i]);
+        if (node_pos >= size_) {
+            return num_results;
         }
-    } else {
-        for (; key[length] != '\0'; ++length) {
-            node_pos ^= static_cast<uchar_type>(key[length]);
-            unit = array_[node_pos];
-            if (unit.label() != static_cast<uchar_type>(key[length])) {
-                return num_results;
-            }
+        unit = array_[node_pos];
+        if (unit.label() != static_cast<uchar_type>(key[i])) {
+            return num_results;
+        }
 
-            node_pos ^= unit.offset();
-            if (unit.has_leaf()) {
-                if (num_results < max_num_results) {
-                    set_result(&results[num_results], static_cast<value_type>(
-                        array_[node_pos].value()), length + 1);
-                }
-                ++num_results;
+        node_pos ^= unit.offset();
+        if (node_pos >= size_) {
+            return num_results;
+        }
+        if (unit.has_leaf()) {
+            if (num_results < max_num_results) {
+                set_result(&results[num_results], static_cast<value_type>(
+                    array_[node_pos].value()), i + 1);
             }
+            ++num_results;
         }
     }
 
     return num_results;
 }
 
-// 遍历查找实现
 template <typename T>
 typename DoubleArray<T>::value_type DoubleArray<T>::traverse(
     const key_type* key,
@@ -311,36 +281,40 @@ typename DoubleArray<T>::value_type DoubleArray<T>::traverse(
     std::size_t& key_pos, 
     std::size_t length) const {
     id_type id = static_cast<id_type>(node_pos);
+    if (array_ == nullptr || id >= size_) {
+        return static_cast<value_type>(-2);
+    }
+    if (length == 0) {
+        length = key_pos;
+        while (key[length] != '\0') {
+            ++length;
+        }
+    }
     unit_type unit = array_[id];
 
-    if (length != 0) {
-        for (; key_pos < length; ++key_pos) {
-            id ^= unit.offset() ^ static_cast<uchar_type>(key[key_pos]);
-            unit = array_[id];
-            if (unit.label() != static_cast<uchar_type>(key[key_pos])) {
-                return static_cast<value_type>(-2);
-            }
-            node_pos = id;
+    for (; key_pos < length; ++key_pos) {
+        id ^= unit.offset() ^ static_cast<uchar_type>(key[key_pos]);
+        if (id >= size_) {
+            return static_cast<value_type>(-2);
         }
-    } else {
-        for (; key[key_pos] != '\0'; ++key_pos) {
-            id ^= unit.offset() ^ static_cast<uchar_type>(key[key_pos]);
-            unit = array_[id];
-            if (unit.label() != static_cast<uchar_type>(key[key_pos])) {
-                return static_cast<value_type>(-2);
-            }
-            node_pos = id;
+        unit = array_[id];
+        if (unit.label() != static_cast<uchar_type>(key[key_pos])) {
+            return static_cast<value_type>(-2);
         }
+        node_pos = id;
     }
 
     if (!unit.has_leaf()) {
         return static_cast<value_type>(-1);
     }
-    unit = array_[id ^ unit.offset()];
+    id ^= unit.offset();
+    if (id >= size_) {
+        return static_cast<value_type>(-2);
+    }
+    unit = array_[id];
     return static_cast<value_type>(unit.value());
 }
 
-// 从文件加载双数组
 template <typename T>
 int DoubleArray<T>::open(const std::string& filename, 
                         const std::string& mode,
@@ -417,7 +391,6 @@ int DoubleArray<T>::open(const std::string& filename,
     return 0;
 }
 
-// 保存双数组到文件
 template <typename T>
 int DoubleArray<T>::save(const std::string& filename, 
                         const std::string& mode,
@@ -440,7 +413,6 @@ int DoubleArray<T>::save(const std::string& filename,
 }
 
 namespace detail {
-    // BitVector类，位向量实现，用于构建过程中
     class BitVector {
     public:
         BitVector() : num_ones_(0), size_(0) {}
@@ -455,7 +427,6 @@ namespace detail {
                 & (~0U >> (UNIT_SIZE - (id % UNIT_SIZE) - 1)));
         }
         
-        // 自定义pop_count函数替代std::popcount
         static id_type pop_count(id_type unit) {
             unit = ((unit & 0xAAAAAAAA) >> 1) + (unit & 0x55555555);
             unit = ((unit & 0xCCCCCCCC) >> 2) + (unit & 0x33333333);
@@ -518,7 +489,6 @@ namespace detail {
         std::size_t size_;
     };
 
-    // Keyset类，用于构建过程中处理键集合
     template <typename T>
     class Keyset {
     public:
@@ -575,7 +545,6 @@ namespace detail {
         const T* values_;
     };
 
-    // DawgNode类，DAWG节点实现
     class DawgNode {
     public:
         DawgNode() : child_(0), sibling_(0), label_('\0'),
@@ -644,7 +613,6 @@ namespace detail {
         bool has_sibling_;
     };
 
-    // DawgUnit类，DAWG单元实现
     class DawgUnit {
     public:
         explicit DawgUnit(id_type unit = 0) : unit_(unit) {}
@@ -678,7 +646,6 @@ namespace detail {
         id_type unit_;
     };
 
-    // DawgBuilder类，DAWG构建器
     class DawgBuilder {
     public:
         DawgBuilder() : num_states_(0) {}
@@ -993,7 +960,6 @@ namespace detail {
         }
     };
 
-    // DoubleArrayBuilderUnit类，双数组构建单元
     class DoubleArrayBuilderUnit {
     public:
         DoubleArrayBuilderUnit() : unit_(0) {}
@@ -1036,7 +1002,6 @@ namespace detail {
         friend class DoubleArrayUnit;
     };
 
-    // DoubleArrayBuilderExtraUnit类，双数组构建额外单元
     class DoubleArrayBuilderExtraUnit {
     public:
         DoubleArrayBuilderExtraUnit() : prev_(0), next_(0),
@@ -1081,7 +1046,6 @@ namespace detail {
         bool is_used_;
     };
 
-    // DoubleArrayBuilder类，双数组构建器
     class DoubleArrayBuilder {
     public:
         explicit DoubleArrayBuilder(progress_func_type progress_func)
@@ -1524,7 +1488,6 @@ namespace detail {
     }
 }  // namespace detail
 
-// build方法实现
 template <typename T>
 int DoubleArray<T>::build(std::size_t num_keys,
     const key_type* const* keys, const std::size_t* lengths,
@@ -1551,6 +1514,6 @@ int DoubleArray<T>::build(std::size_t num_keys,
     return 0;
 }
 
-}  // namespace new_darts
+}  // namespace trie
 
-#endif  // DARTS_H_
+#endif  // PIECE_TRIE_H_

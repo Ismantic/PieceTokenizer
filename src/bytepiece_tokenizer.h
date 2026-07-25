@@ -50,7 +50,7 @@ private:
     std::unique_ptr<PreTokenizer> pretokenizer_;
     StrToInt pieces_;
     int unk_id_ = -1;
-    new_darts::DoubleArray<int> trie_;
+    trie::DoubleArray<int> trie_;
     std::unordered_map<int, float_t> value_map_;
     float_t fallback_weight_ = -10.0;
 };

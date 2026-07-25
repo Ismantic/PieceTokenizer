@@ -54,7 +54,7 @@ private:
   std::pair<std::string_view, int> ProcessTrie(std::string_view input) const;
 
   static constexpr int kMaxTrieResultSize = 32;
-  std::unique_ptr<new_darts::DoubleArray<int>> trie_;
+  std::unique_ptr<trie::DoubleArray<int>> trie_;
   const char *normalized_ = nullptr; 
 
   const PreTokenizerSpec* spec_;

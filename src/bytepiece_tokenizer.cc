@@ -168,7 +168,7 @@ std::vector<BytePieceTokenizer::Match> BytePieceTokenizer::GetMatches(
         }
 
         const size_t kMaxNumResults = 16;
-        new_darts::DoubleArray<int>::ResultPair results[kMaxNumResults];
+        trie::DoubleArray<int>::ResultPair results[kMaxNumResults];
         const size_t num_results = trie_.commonPrefixSearch(
             text.data() + pos, results, kMaxNumResults, num - pos);
         for (size_t i = 0; i < num_results; ++i) {

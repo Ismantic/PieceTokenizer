@@ -50,7 +50,7 @@ private:
 
     std::vector<Match> GetMatches(std::string_view text) const;
 
-    new_darts::DoubleArray<int> trie_;
+    trie::DoubleArray<int> trie_;
     std::unordered_map<int, float_t> weights_;
     float_t fallback_weight_ = -10.0;
 };

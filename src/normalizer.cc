@@ -80,14 +80,14 @@ bool MapBuilder::CompileUstrMap(const UstrMap& ustr_map,
         value[i] = kv[i].second;
     }
 
-    new_darts::DoubleArray<int> trie;
+    trie::DoubleArray<int> trie;
     trie.build(key.size(), const_cast<char **>(&key[0]), nullptr, &value[0]);
 
     int max_nodes_size = 0;
-    std::vector<new_darts::DoubleArray<int>::ResultPair> results(
+    std::vector<trie::DoubleArray<int>::ResultPair> results(
         2 * Normalizer::kMaxTrieResultSize);
     for (const char *str : key) {
-        const int num_nodes = trie.commonPrefixSearch<new_darts::DoubleArray<int>::ResultPair>(str, 
+        const int num_nodes = trie.commonPrefixSearch<trie::DoubleArray<int>::ResultPair>(str,
                                                       results.data(),
                                                       results.size(), 
                                                       strlen(str));
@@ -117,7 +117,7 @@ bool MapBuilder::DecompileUstrMap(std::string_view blob,
     std::string_view trie_blob, normalized;
     DecodePrecompiledMap(blob, &trie_blob, &normalized);
 
-    new_darts::DoubleArray<int> trie;
+    trie::DoubleArray<int> trie;
     trie.set_array(const_cast<char*>(trie_blob.data()),
                    trie_blob.size()/trie.unit_size());
     
@@ -133,7 +133,7 @@ bool MapBuilder::DecompileUstrMap(std::string_view blob,
             key.push_back(static_cast<char>(c));
             size_t node_pos_ = node_pos;
             size_t key_pos_ = key_pos;
-            const new_darts::DoubleArray<int>::value_type result = 
+            const trie::DoubleArray<int>::value_type result =
                 trie.traverse(key.data(), node_pos_, key_pos_, key.size());
             if (result >= -1) {
                 if (result >= 0) {
@@ -197,7 +197,7 @@ void Normalizer::Init() {
         std::string_view trie_blob, normalized;
         MapBuilder::DecodePrecompiledMap(data, &trie_blob, &normalized);
 
-        trie_ = std::make_unique<new_darts::DoubleArray<int>>();
+        trie_ = std::make_unique<trie::DoubleArray<int>>();
         trie_->set_array(const_cast<char *>(trie_blob.data()),
                          trie_blob.size() / trie_->unit_size());
         normalized_ = normalized.data(); 
@@ -208,8 +208,8 @@ std::pair<std::string_view, int> Normalizer::ProcessTrie(std::string_view input)
     std::pair<std::string_view, int> p;
 
     if (trie_ != nullptr) {
-        new_darts::DoubleArray<int>::ResultPair rs[kMaxTrieResultSize];
-        const size_t num = trie_->commonPrefixSearch<new_darts::DoubleArray<int>::ResultPair>(
+        trie::DoubleArray<int>::ResultPair rs[kMaxTrieResultSize];
+        const size_t num = trie_->commonPrefixSearch<trie::DoubleArray<int>::ResultPair>(
             input.data(), rs, kMaxTrieResultSize, input.size());
         
         if (num > 0) {

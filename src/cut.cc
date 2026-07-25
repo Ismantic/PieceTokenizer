@@ -136,7 +136,7 @@ std::vector<CnCutter::Match> CnCutter::GetMatches(std::string_view text) const {
             matches.push_back({pos + length - 1, length, fallback_weight_});
         }
 
-        using Result = new_darts::DoubleArray<int>::ResultPair;
+        using Result = trie::DoubleArray<int>::ResultPair;
         std::vector<Result> results(16);
         size_t count = trie_.commonPrefixSearch(
             text.data() + pos, results.data(), results.size(), size - pos);

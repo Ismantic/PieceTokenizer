@@ -32,9 +32,7 @@ python3 -m pip install datasets opencc-python-reimplemented
 数据处理分为 `download → process → sentences` 三个阶段。最简单的方式是一次执行全部阶段：
 
 ```bash
-cd data
-make PYTHON=python3
-cd ..
+make -C data PYTHON=python3
 ```
 
 `data/Makefile` 默认设置了 Hugging Face 镜像：
@@ -66,8 +64,7 @@ HF_ENDPOINT=https://hf-mirror.com
 #### 下载原始数据
 
 ```bash
-cd data
-make download PYTHON=python3
+make -C data download PYTHON=python3
 ```
 
 该阶段分别调用 `fetch_finewiki.py` 和 `fetch_enwiki.py`，生成：
@@ -82,7 +79,7 @@ data/data/enwiki.jsonl
 #### 清洗和抽取文本
 
 ```bash
-make process PYTHON=python3
+make -C data process PYTHON=python3
 ```
 
 该阶段调用 `process.py`：
@@ -93,7 +90,7 @@ make process PYTHON=python3
 #### 切分为训练句子
 
 ```bash
-make sentences PYTHON=python3
+make -C data sentences PYTHON=python3
 ```
 
 该阶段调用 `split_sentences.py`，生成最终训练输入：
@@ -106,19 +103,16 @@ data/en_sentences.txt
 每个文件采用 UTF-8 编码，每行是一条训练样本。可以简单检查文件是否生成以及大致规模：
 
 ```bash
-ls -lh cn_sentences.txt en_sentences.txt
-wc -l cn_sentences.txt en_sentences.txt
-head -n 3 cn_sentences.txt
-head -n 3 en_sentences.txt
-cd ..
+ls -lh data/cn_sentences.txt data/en_sentences.txt
+wc -l data/cn_sentences.txt data/en_sentences.txt
+head -n 3 data/cn_sentences.txt
+head -n 3 data/en_sentences.txt
 ```
 
 `make` 会根据文件时间戳跳过已经完成的阶段，适合分阶段执行或断点续跑。若要删除下载文件及所有处理中间产物并从头开始：
 
 ```bash
-cd data
-make clean
-cd ..
+make -C data clean
 ```
 
 `make clean` 会删除原始下载和处理结果，无法用于恢复数据，请确认不再需要这些文件后再执行。
