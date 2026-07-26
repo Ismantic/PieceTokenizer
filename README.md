@@ -38,7 +38,7 @@ python -m pip install datasets opencc-python-reimplemented
 
 `data/Makefile` 会下载完整的 FineWiki 中英文训练集，可能占用较多网络流量、磁盘空间和处理时间；已有语料时可跳过下载，直接覆盖训练脚本的 `CN_INPUT`、`EN_INPUT`。下载数据、中间文本和分句结果均被 Git 忽略。
 
-## PreTokenizer 三轴
+## PreTokenizer 三个参数
 
 `Normalizer → PreTokenizer` 两段，不需要模型。三个正交参数（任意组合，互不强制），各 1:1 对应模型里持久化的字段：
 
