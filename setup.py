@@ -15,6 +15,7 @@ class CMakeBuild(build_ext):
         cmake_args = [
             f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
             f"-DPYTHON_EXECUTABLE={sys.executable}",
+            "-DCMAKE_BUILD_TYPE=Release",
             "-DBUILD_PYTHON=ON",
         ]
         build_args = ["--config", "Release", "-j"]

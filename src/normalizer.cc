@@ -242,7 +242,7 @@ std::pair<std::string_view, int> Normalizer::ProcessTrie(std::string_view input)
 bool Normalizer::Normalize(std::string_view input,
                            std::string* output,
                            std::vector<size_t>* n2o) const {
-    n2o->clear();
+    if (n2o) n2o->clear();
     output->clear();
 
     if (input.empty())
@@ -268,7 +268,7 @@ bool Normalizer::Normalize(std::string_view input,
 
     const size_t reserve_size = input.size() * 3;
     output->reserve(reserve_size);
-    n2o->reserve(reserve_size);
+    if (n2o) n2o->reserve(reserve_size);
 
     const std::string_view space = spec_->GetSpace();
     bool is_prev_space = !reconstruct;  // reconstruct: don't treat start as "after space"
@@ -286,12 +286,14 @@ bool Normalizer::Normalize(std::string_view input,
                 if (sp[i] == ' ') {
                     // replace SpaceSymbol
                     output->append(space.data(), space.size());
-                    for (size_t j = 0; j < space.size(); ++j) {
-                        n2o->push_back(consume);
+                    if (n2o) {
+                        for (size_t j = 0; j < space.size(); ++j) {
+                            n2o->push_back(consume);
+                        }
                     }
                 } else {
                     (*output) += sp[i];
-                    n2o->push_back(consume);
+                    if (n2o) n2o->push_back(consume);
                 }
             }
             
@@ -307,21 +309,20 @@ bool Normalizer::Normalize(std::string_view input,
         while (output->size() >= space.size() &&
                output->substr(output->size() - space.size()) == space) {
           const int length = output->size() - space.size();
-          consume = (*n2o)[length];
+          if (n2o) consume = (*n2o)[length];
           output->resize(length);
-          n2o->resize(length);
+          if (n2o) n2o->resize(length);
         }
     }
 
-    n2o->push_back(consume);
+    if (n2o) n2o->push_back(consume);
 
     return true;
 }
 
 std::string Normalizer::Normalize(std::string_view input) const {
-    std::vector<size_t> n2o;
     std::string output;
-    Normalize(input, &output, &n2o);
+    Normalize(input, &output, nullptr);
     return output;
 }
 

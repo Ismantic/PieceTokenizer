@@ -64,14 +64,15 @@ public:
 
   int PieceID(std::string_view piece) const;
   EncodeResult Encode(std::string_view text) const;
+  std::vector<int> EncodeAsIds(std::string_view text) const;
   std::vector<std::string> Tokenize(std::string_view text) const;
   std::string Decode(const std::vector<int>& ids) const;
   std::string Decode(const EncodeResult& rs) const;
   bool valid() const { return pretokenizer_.valid(); }
 
 private:
-  // Core Viterbi-BPE encoding on a single segment (no normalize, no split).
-  EncodeResult EncodeSegment(std::string_view text) const;
+  void AppendEncodedSegment(std::string_view text, EncodeResult* output,
+                            std::vector<int>* ids) const;
 
   const Model* model_;
   PreTokenizer pretokenizer_;

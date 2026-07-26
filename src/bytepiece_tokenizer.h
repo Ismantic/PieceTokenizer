@@ -29,6 +29,7 @@ public:
     ~BytePieceTokenizer();
 
     EncodeResult Encode(std::string_view text) const;
+    std::vector<int> EncodeAsIds(std::string_view text) const;
     std::string Decode(const std::vector<int>& ids) const;
     std::string Decode(const EncodeResult& encoded) const;
     std::vector<std::string> Tokenize(std::string_view text) const;

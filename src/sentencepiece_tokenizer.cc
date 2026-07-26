@@ -12,6 +12,7 @@ SentencePieceTokenizer::SentencePieceTokenizer(const Model& model,
       pretokenizer_(model.GetPreTokenizerSpec(), dict),
       unk_id_(-1) {
 
+  pieces_.reserve(model_->PiecesSize());
   for (size_t i = 0; i < model_->PiecesSize(); ++i) {
     const auto& p = model_->GetPieces(i);
     pieces_[p.GetPiece()] = i;
@@ -52,18 +53,23 @@ int SentencePieceTokenizer::PieceID(std::string_view piece) const {
 EncodeResult SentencePieceTokenizer::Encode(std::string_view str) const {
     EncodeResult result;
     for (const auto& piece : pretokenizer_.PreTokenize(str)) {
-        auto sub = EncodeSegment(piece);
-        result.insert(result.end(),
-                      std::make_move_iterator(sub.begin()),
-                      std::make_move_iterator(sub.end()));
+        AppendEncodedSegment(piece, &result, nullptr);
     }
     return result;
 }
 
-EncodeResult SentencePieceTokenizer::EncodeSegment(std::string_view text) const {
-    if (text.empty()) {
-        return {};
+std::vector<int> SentencePieceTokenizer::EncodeAsIds(
+    std::string_view text) const {
+    std::vector<int> result;
+    for (const auto& piece : pretokenizer_.PreTokenize(text)) {
+        AppendEncodedSegment(piece, nullptr, &result);
     }
+    return result;
+}
+
+void SentencePieceTokenizer::AppendEncodedSegment(
+    std::string_view text, EncodeResult* output, std::vector<int>* ids) const {
+    if (text.empty()) return;
 
     struct SymbolPair {
         int left;
@@ -157,7 +163,6 @@ EncodeResult SentencePieceTokenizer::EncodeSegment(std::string_view text) const 
         MaybeAddNewSymbolPair(top->left, symbols[top->left].next);
     }
 
-    EncodeResult output;
     for (int index = 0; index != -1; index = symbols[index].next) {
         auto w = symbols[index].piece;
         int i = PieceID(w);
@@ -167,14 +172,20 @@ EncodeResult SentencePieceTokenizer::EncodeSegment(std::string_view text) const 
                 const uint8_t byte = static_cast<uint8_t>(w[j]);
                 std::string byte_piece = ustr::ByteToPiece(byte);
                 int byte_id = PieceID(byte_piece);
-                output.emplace_back(byte_piece, byte_id);
+                if (output) {
+                    output->emplace_back(std::move(byte_piece), byte_id);
+                } else {
+                    ids->push_back(byte_id);
+                }
             }
         } else {
-            output.emplace_back(std::string(w), i);
+            if (output) {
+                output->emplace_back(std::string(w), i);
+            } else {
+                ids->push_back(i);
+            }
         }
     }
-
-    return output;
 }
 
 std::string SentencePieceTokenizer::Decode(const std::vector<int>& ids) const {

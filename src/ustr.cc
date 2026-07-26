@@ -283,6 +283,7 @@ std::vector<std::string> SplitTextCn(std::string_view text,
                                      bool split_digits) {
     std::vector<std::string> result;
     const auto pieces = SplitText(text, space, cut);
+    result.reserve(pieces.size());
 
     // SplitText already splits at Han / non-Han boundaries and peels
     // space prefixes from Han runs. Each piece is either entirely Han

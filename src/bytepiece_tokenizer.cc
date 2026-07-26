@@ -61,6 +61,23 @@ BytePieceTokenizer::EncodeResult BytePieceTokenizer::Encode(
     return output;
 }
 
+std::vector<int> BytePieceTokenizer::EncodeAsIds(std::string_view text) const {
+    const std::vector<std::string> tokens = Tokenize(text);
+    std::vector<int> output;
+    output.reserve(tokens.size());
+    for (const auto& token : tokens) {
+        const int piece_id = PieceID(token);
+        if (piece_id == unk_id_) {
+            for (unsigned char byte : token) {
+                output.push_back(PieceID(ustr::ByteToPiece(byte)));
+            }
+        } else {
+            output.push_back(piece_id);
+        }
+    }
+    return output;
+}
+
 std::string BytePieceTokenizer::Decode(const std::vector<int>& ids) const {
     std::string result;
     result.reserve(ids.size() * 3);

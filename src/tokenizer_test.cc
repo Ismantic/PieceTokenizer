@@ -75,6 +75,11 @@ TEST(SentencePieceTokenizerTest, HonorsIsolatedPretokenBoundaries) {
     EXPECT_EQ("a", tokens[0]);
     EXPECT_EQ(",", tokens[1]);
     EXPECT_EQ("b", tokens[2]);
+    const auto ids = tokenizer.EncodeAsIds("a,b");
+    ASSERT_EQ(3u, ids.size());
+    EXPECT_EQ(0, ids[0]);
+    EXPECT_EQ(1, ids[1]);
+    EXPECT_EQ(2, ids[2]);
 }
 
 TEST(SentencePieceTokenizerTest, HonorsSplitDigitPretokenBoundaries) {
@@ -138,6 +143,8 @@ TEST(BytePieceTokenizerTest, FallsBackToCharacterBoundaries) {
     EXPECT_EQ("学习", tokens[2]);
     EXPECT_EQ("未", tokens[3]);
     EXPECT_EQ("知", tokens[4]);
+    const auto ids = tokenizer.EncodeAsIds("我们在学习未知");
+    EXPECT_EQ(tokenizer.Encode("我们在学习未知").size(), ids.size());
 }
 
 TEST(CnCutterTest, SegmentsWithoutBytePieceTokenizer) {
@@ -213,12 +220,45 @@ TEST(TokenizerTest, PieceAndBytePieceHonorPretokenBoundaries) {
     EXPECT_EQ("b", byte_tokens[2]);
 }
 
+TEST(PieceTokenizerTest, AppliesPackedMergeRanksInOrder) {
+    piece::Model model;
+    model.GetMutablePreTokenizerSpec()->SetName("no");
+    model.GetMutablePreTokenizerSpec()->SetSpace(" ");
+    for (const auto& fields :
+         std::vector<std::vector<std::string>>{
+             {"a", "", ""}, {"b", "", ""}, {"c", "", ""},
+             {"ab", "a", "b"}, {"bc", "b", "c"}, {"abc", "ab", "c"}}) {
+        model.InsertPieces()->SetPiece(fields[0], fields[1], fields[2]);
+    }
+
+    piece::PieceTokenizer tokenizer(model);
+    const auto tokens = tokenizer.Tokenize("abc");
+    ASSERT_EQ(1u, tokens.size());
+    EXPECT_EQ("abc", tokens[0]);
+    const auto ids = tokenizer.EncodeAsIds("abc");
+    ASSERT_EQ(1u, ids.size());
+    EXPECT_EQ(5, ids[0]);
+}
+
 TEST(NormalizerTest, NmtNfkcNormalizesCompatibilityChars) {
     piece::PreTokenizerSpec spec;
     spec.SetName("NMT_NFKC");
 
     piece::Normalizer normalizer(spec);
     EXPECT_EQ("123", normalizer.Normalize("①②③"));
+}
+
+TEST(NormalizerTest, OutputOnlyMatchesOffsetMappingPath) {
+    piece::PreTokenizerSpec spec;
+    spec.SetName("NMT_NFKC");
+
+    piece::Normalizer normalizer(spec);
+    const std::string input = " ①  ②③ ";
+    std::string mapped_output;
+    std::vector<size_t> offsets;
+    ASSERT_TRUE(normalizer.Normalize(input, &mapped_output, &offsets));
+    EXPECT_EQ(mapped_output, normalizer.Normalize(input));
+    EXPECT_EQ(mapped_output.size() + 1, offsets.size());
 }
 
 TEST(NormalizerTest, CompiledMapRoundTripsThroughNewTrie) {

@@ -24,6 +24,7 @@ public:
   ~PieceTokenizer();
 
   EncodeResult Encode(std::string_view text) const;
+  std::vector<int> EncodeAsIds(std::string_view text) const;
   std::vector<std::string> Tokenize(std::string_view text) const;
   std::string Decode(const std::vector<int>& ids) const;
   std::string Decode(const EncodeResult& rs) const;
@@ -31,19 +32,18 @@ public:
   bool valid() const { return pretokenizer_.valid(); }
 
 private:
-  struct PairHash {
-    size_t operator()(const std::pair<int, int>& p) const {
-      return std::hash<int>{}(p.first) ^ (std::hash<int>{}(p.second) << 1);
-    }
-  };
+  static uint64_t MergeKey(int left, int right) {
+    return (static_cast<uint64_t>(static_cast<uint32_t>(left)) << 32) |
+           static_cast<uint32_t>(right);
+  }
 
-  std::vector<int> BuildInitialTokenIds(const std::string& text) const;
+  void BuildInitialTokenIds(std::string_view text, std::vector<int>* ids) const;
   void GreedyMerge(std::vector<int>& ids) const;
-  EncodeResult TokenIdsToResult(const std::vector<int>& ids) const;
+  void AppendTokenIds(const std::vector<int>& ids, EncodeResult* result) const;
 
   const Model* model_;
   PreTokenizer pretokenizer_;
-  std::unordered_map<std::pair<int, int>, int, PairHash> merge_ranks_;
+  std::unordered_map<uint64_t, int> merge_ranks_;
   StrToInt pieces_;
   int unk_id_;
   int byte_to_id_[256];

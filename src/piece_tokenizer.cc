@@ -10,6 +10,8 @@ PieceTokenizer::PieceTokenizer(const Model& model, const std::string& dict)
   const auto& counter_spec = model_->GetCounterSpec();
   unk_id_ = counter_spec.unk_id();
 
+  pieces_.reserve(model_->PiecesSize());
+  merge_ranks_.reserve(model_->PiecesSize());
   for (size_t i = 0; i < model_->PiecesSize(); ++i) {
     const auto& piece = model_->GetPieces(i);
     pieces_[piece.GetPiece()] = i;
@@ -20,7 +22,7 @@ PieceTokenizer::PieceTokenizer(const Model& model, const std::string& dict)
       int u_id = PieceID(u);
       int v_id = PieceID(v);
       if (u_id >= 0 && v_id >= 0) {
-        merge_ranks_[{u_id, v_id}] = static_cast<int>(i);
+        merge_ranks_[MergeKey(u_id, v_id)] = static_cast<int>(i);
       }
     }
   }
@@ -41,13 +43,26 @@ PieceTokenizer::~PieceTokenizer() = default;
 
 PieceTokenizer::EncodeResult PieceTokenizer::Encode(std::string_view text) const {
   EncodeResult result;
+  std::vector<int> ids;
   for (const auto& segment : pretokenizer_.PreTokenize(text)) {
-    std::vector<int> ids = BuildInitialTokenIds(segment);
+    BuildInitialTokenIds(segment, &ids);
     GreedyMerge(ids);
-    auto sub = TokenIdsToResult(ids);
-    result.insert(result.end(),
-                  std::make_move_iterator(sub.begin()),
-                  std::make_move_iterator(sub.end()));
+    AppendTokenIds(ids, &result);
+  }
+  return result;
+}
+
+std::vector<int> PieceTokenizer::EncodeAsIds(std::string_view text) const {
+  std::vector<int> result;
+  std::vector<int> ids;
+  for (const auto& segment : pretokenizer_.PreTokenize(text)) {
+    BuildInitialTokenIds(segment, &ids);
+    GreedyMerge(ids);
+    for (int id : ids) {
+      result.push_back(
+          id >= 0 && id < static_cast<int>(model_->PiecesSize())
+              ? id : unk_id_);
+    }
   }
   return result;
 }
@@ -103,51 +118,43 @@ int PieceTokenizer::PieceID(std::string_view piece) const {
   return it != pieces_.end() ? it->second : unk_id_;
 }
 
-std::vector<int> PieceTokenizer::BuildInitialTokenIds(
-    const std::string& text) const {
-  std::vector<int> ids;
-  ids.reserve(text.size());
+void PieceTokenizer::BuildInitialTokenIds(
+    std::string_view text, std::vector<int>* ids) const {
+  ids->clear();
+  ids->reserve(text.size());
   for (unsigned char c : text) {
-    ids.push_back(byte_to_id_[c]);
+    ids->push_back(byte_to_id_[c]);
   }
-  return ids;
 }
 
-// Greedy merge: repeatedly find the pair with the lowest merge rank
-// (earliest learned merge) and apply it, until no more merges are possible.
 void PieceTokenizer::GreedyMerge(std::vector<int>& ids) const {
   while (ids.size() >= 2) {
-    // Find the pair with the smallest merge rank
     int best_rank = INT_MAX;
     size_t best_pos = 0;
     for (size_t i = 0; i + 1 < ids.size(); ++i) {
-      auto it = merge_ranks_.find({ids[i], ids[i + 1]});
+      const auto it = merge_ranks_.find(MergeKey(ids[i], ids[i + 1]));
       if (it != merge_ranks_.end() && it->second < best_rank) {
         best_rank = it->second;
         best_pos = i;
       }
     }
     if (best_rank == INT_MAX) break;
-
-    // Apply: replace ids[best_pos] and ids[best_pos+1] with best_rank
     ids[best_pos] = best_rank;
     ids.erase(ids.begin() + best_pos + 1);
   }
 }
 
-PieceTokenizer::EncodeResult PieceTokenizer::TokenIdsToResult(
-    const std::vector<int>& ids) const {
-  EncodeResult result;
+void PieceTokenizer::AppendTokenIds(
+    const std::vector<int>& ids, EncodeResult* result) const {
   for (int id : ids) {
     if (id >= 0 && id < static_cast<int>(model_->PiecesSize())) {
       const std::string& piece = model_->GetPieces(id).GetPiece();
-      result.emplace_back(piece, id);
+      result->emplace_back(piece, id);
     } else if (unk_id_ >= 0) {
       const std::string& unk_piece = model_->GetPieces(unk_id_).GetPiece();
-      result.emplace_back(unk_piece, unk_id_);
+      result->emplace_back(unk_piece, unk_id_);
     }
   }
-  return result;
 }
 
 }  // namespace piece

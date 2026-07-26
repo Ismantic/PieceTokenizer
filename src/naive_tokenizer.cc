@@ -39,6 +39,14 @@ NaiveTokenizer::EncodeResult NaiveTokenizer::Encode(std::string_view text) const
   return result;
 }
 
+std::vector<int> NaiveTokenizer::EncodeAsIds(std::string_view text) const {
+  std::vector<int> ids;
+  ids.reserve(text.size());
+  for (unsigned char c : text) ids.push_back(c);
+  ApplyMerges(ids);
+  return ids;
+}
+
 std::vector<std::string> NaiveTokenizer::Tokenize(std::string_view text) const {
   std::vector<std::string> tokens;
   auto encoded = Encode(text);

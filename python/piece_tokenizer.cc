@@ -32,11 +32,6 @@ public:
             method != "sentencepiece" && method != "bytepiece") {
             return false;
         }
-        if (method == "piece" || method == "sentencepiece") {
-            PreTokenizer pretokenizer(model.GetPreTokenizerSpec(), dict);
-            if (!pretokenizer.valid()) return false;
-        }
-
         tokenizer_ = std::monostate{};
         normalizer_.reset();
         model_ = std::move(model);
@@ -47,9 +42,14 @@ public:
         if (method == "naive") {
             tokenizer_ = std::make_unique<NaiveTokenizer>(model_);
         } else if (method == "piece") {
-            tokenizer_ = std::make_unique<PieceTokenizer>(model_, dict);
+            auto tokenizer = std::make_unique<PieceTokenizer>(model_, dict);
+            if (!tokenizer->valid()) return false;
+            tokenizer_ = std::move(tokenizer);
         } else if (method == "sentencepiece") {
-            tokenizer_ = std::make_unique<SentencePieceTokenizer>(model_, dict);
+            auto tokenizer =
+                std::make_unique<SentencePieceTokenizer>(model_, dict);
+            if (!tokenizer->valid()) return false;
+            tokenizer_ = std::move(tokenizer);
         } else {
             tokenizer_ = std::make_unique<BytePieceTokenizer>(model_);
         }
@@ -75,13 +75,19 @@ public:
     }
 
     std::vector<int> EncodeAsIds(const std::string& text) const {
-        auto result = Encode(text);
-        std::vector<int> ids;
-        ids.reserve(result.size());
-        for (const auto& [piece, id] : result) {
-            ids.push_back(id);
-        }
-        return ids;
+        EnsureLoaded();
+        return std::visit([&](const auto& tokenizer) -> std::vector<int> {
+            using Alternative = std::decay_t<decltype(tokenizer)>;
+            if constexpr (std::is_same_v<Alternative, std::monostate>) {
+                return {};
+            } else if constexpr (std::is_same_v<
+                                     typename Alternative::element_type,
+                                     NaiveTokenizer>) {
+                return tokenizer->EncodeAsIds(normalizer_->Normalize(text));
+            } else {
+                return tokenizer->EncodeAsIds(text);
+            }
+        }, tokenizer_);
     }
 
     std::vector<std::string> EncodeAsPieces(const std::string& text) const {
