@@ -1,5 +1,7 @@
 # PieceTokenizer
 
+[English](README_EN.md) | 中文
+
 [![PyPI](https://img.shields.io/pypi/v/piece-tokenizer)](https://pypi.org/project/piece-tokenizer/)
 [![Python](https://img.shields.io/pypi/pyversions/piece-tokenizer)](https://pypi.org/project/piece-tokenizer/)
 [![CI](https://github.com/Ismantic/PieceTokenizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Ismantic/PieceTokenizer/actions/workflows/ci.yml)
