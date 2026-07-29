@@ -1,0 +1,53 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "piece-tokenizer"
+version = "0.1.0"
+description = "C++17 BPE, BBPE, and BytePiece tokenizer with bundled vocabularies"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{ name = "Ismantic" }]
+keywords = ["tokenizer", "bpe", "bbpe", "bytepiece", "nlp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Text Processing :: Linguistic",
+]
+
+[project.urls]
+Homepage = "https://github.com/Ismantic/PieceTokenizer"
+Documentation = "https://github.com/Ismantic/PieceTokenizer/blob/main/API.md"
+
+[tool.scikit-build]
+cmake.version = ">=3.14"
+cmake.args = ["-DBUILD_PYTHON=ON"]
+cmake.build-type = "Release"
+build.targets = ["_core"]
+wheel.packages = ["python/piece_tokenizer"]
+wheel.license-files = ["LICENSE"]
+sdist.include = [
+    "save/BERTc-Tokenizer.pt",
+    "save/Summer-Tokenizer.pt",
+    "save/Summer-Tokenizer.dict.txt",
+]
+
+[tool.cibuildwheel]
+build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
+skip = "*-musllinux_*"
+build-verbosity = 1
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]

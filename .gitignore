@@ -1,6 +1,9 @@
 # Build outputs
 build/
 *.o
+*.so
+*.egg-info/
+dist/
 
 # Docs (local only)
 docs/

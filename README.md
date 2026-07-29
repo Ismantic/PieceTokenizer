@@ -4,6 +4,30 @@ BPE/BBPE + BytePiece 的 C++ 实现，多种训练/推理算法，带 Python 绑
 
 三段式流水线：**Normalizer**（NFKC）→ **PreTokenizer**（Split / Num / Cn 三个正交参数）→ **Tokenize**（可训练）。文本格式 `.pt`，可读可编辑，UTF-8 字节回退。
 
+## 安装
+
+PyPI wheel 自带 BERTc 与 Summer 模型及 Summer 中文词典，无需另外下载或现场编译：
+
+```bash
+pip install piece-tokenizer
+```
+
+```python
+import piece_tokenizer as pt
+
+# BERTc：SentencePiece，12,535 词
+bertc = pt.BERTcTokenizer()
+ids = bertc.encode_as_ids("你好，PieceTokenizer")
+print(bertc.decode(ids))
+
+# Summer：Piece BPE，81,903 词；配套中文词典会自动加载
+summer = pt.SummerTokenizer()
+print(summer.encode("中华人民共和国"))
+
+# 等价的按名称加载方式
+tok = pt.Tokenizer("BERTc")  # 或 "Summer"
+```
+
 ## 构建
 
 需要 CMake 3.14+、C++17。
@@ -11,7 +35,7 @@ BPE/BBPE + BytePiece 的 C++ 实现，多种训练/推理算法，带 Python 绑
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-uv pip install .          # Python 模块（需 Pybind11）
+uv pip install .          # 从源码构建 Python 包
 ```
 
 ## 快速开始
@@ -124,6 +148,10 @@ echo "Tom 他是英国人Bat" | \
 
 ```python
 import piece_tokenizer as pt
+
+# 安装包内置模型
+bertc = pt.Tokenizer("BERTc")
+summer = pt.Tokenizer("Summer")  # 自动加载配套中文词典
 
 # 模型无关的预分词（三轴同 CLI）
 pt.PreTokenizer(split='isolate', num='split', cn='no').tokenize("你好123 hi")

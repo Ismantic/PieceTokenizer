@@ -3,7 +3,7 @@
 本文档描述 `piece_tokenizer` Python 模块的接口。模块由 `python/piece_tokenizer.cc` 通过 PyBind11 暴露，安装方式：
 
 ```bash
-uv pip install .
+pip install piece-tokenizer
 ```
 
 模块包含两个类：
@@ -58,12 +58,18 @@ pt.PreTokenizer(split="isolate", num="split", cn="no").tokenize("你好123 hi")
 
 ## `piece_tokenizer.Tokenizer`
 
-加载训练好的模型文件（`.pt` / `.model`），支持 `naive`、`piece`、`sentencepiece`、`bytepiece` 四种方法。
+加载训练好的模型文件（`.pt` / `.model`），支持 `naive`、`piece`、`sentencepiece`、`bytepiece` 四种方法。PyPI wheel 内置 BERTc、Summer 及 Summer 配套词典。
 
 ### 构造
 
 ```python
-tok = pt.Tokenizer()
+tok = pt.Tokenizer()          # 暂不加载模型，兼容原接口
+bertc = pt.Tokenizer("BERTc")
+summer = pt.Tokenizer("Summer")
+
+# 等价的便捷构造
+bertc = pt.BERTcTokenizer()
+summer = pt.SummerTokenizer()
 ```
 
 ### 方法
@@ -71,6 +77,7 @@ tok = pt.Tokenizer()
 #### `load(model_file: str, dict: str = "") -> bool`
 
 加载模型文件。`piece` / `sentencepiece` 的 CN 模式下，`dict` 必须与训练时一致。
+`model_file` 也可使用内置名称 `"BERTc"` 或 `"Summer"`；Summer 会自动加载包内词典。
 加载成功返回 `True`；以下情况返回 `False`：
 
 - 模型文件不存在、无法读取或格式无效。
@@ -85,6 +92,9 @@ if not ok:
 
 # piece / sentencepiece 若训练时使用了 --dict，推理必须传同一个 dict
 ok = tok.load("save/Summer-Tokenizer.pt", dict="save/Summer-Tokenizer.dict.txt")
+
+# 使用随 wheel 发布的模型
+ok = tok.load("Summer")
 ```
 
 #### `encode(text: str) -> list[tuple[str, int]]`

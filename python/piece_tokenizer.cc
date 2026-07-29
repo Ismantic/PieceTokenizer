@@ -220,7 +220,7 @@ private:
     std::unique_ptr<piece::PreTokenizer> tokenizer_;
 };
 
-PYBIND11_MODULE(piece_tokenizer, m) {
+PYBIND11_MODULE(_core, m) {
     m.doc() = "PieceTokenizer Python bindings";
 
     py::class_<PyPreTokenizer>(m, "PreTokenizer")
