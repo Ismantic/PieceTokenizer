@@ -1,12 +1,24 @@
 # PieceTokenizer
 
-BPE/BBPE + BytePiece 的 C++ 实现，多种训练/推理算法，带 Python 绑定。
+[![PyPI](https://img.shields.io/pypi/v/piece-tokenizer)](https://pypi.org/project/piece-tokenizer/)
+[![Python](https://img.shields.io/pypi/pyversions/piece-tokenizer)](https://pypi.org/project/piece-tokenizer/)
+[![CI](https://github.com/Ismantic/PieceTokenizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Ismantic/PieceTokenizer/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/Ismantic/PieceTokenizer)](LICENSE)
 
-三段式流水线：**Normalizer**（NFKC）→ **PreTokenizer**（Split / Num / Cn 三个正交参数）→ **Tokenize**（可训练）。文本格式 `.pt`，可读可编辑，UTF-8 字节回退。
+PieceTokenizer 是一个 C++17 实现的 BPE、BBPE 与 BytePiece 训练和推理工具，
+提供命令行程序与 Python API。它采用可复现的三段式流水线：
 
-## 安装
+```text
+Normalizer → PreTokenizer → Tokenizer
+```
 
-PyPI wheel 自带 BERTc 与 Summer 模型及 Summer 中文词典，无需另外下载或现场编译：
+支持 NFKC 规范化、英文/数字/中文边界控制、可编辑的文本模型格式和 UTF-8
+字节回退。内置 BERTc 与 Summer 两套可直接使用的 tokenizer。
+
+## 快速开始
+
+预编译 wheel 支持 CPython 3.9–3.14，以及 Linux、Windows、Intel macOS 和
+Apple Silicon macOS。安装时会带上两套词表，无需另外下载或现场编译：
 
 ```bash
 pip install piece-tokenizer
@@ -15,30 +27,36 @@ pip install piece-tokenizer
 ```python
 import piece_tokenizer as pt
 
-# BERTc：SentencePiece，12,535 词
 bertc = pt.BERTcTokenizer()
 ids = bertc.encode_as_ids("你好，PieceTokenizer")
 print(bertc.decode(ids))
+# 你好，PieceTokenizer
 
-# Summer：Piece BPE，81,903 词；配套中文词典会自动加载
+# Summer 的配套中文词典会自动加载
 summer = pt.SummerTokenizer()
 print(summer.encode("中华人民共和国"))
 
-# 等价的按名称加载方式
+# 也可以按名称加载
 tok = pt.Tokenizer("BERTc")  # 或 "Summer"
 ```
 
+| 内置模型 | 方法 | 词表大小 | 中文预切分 |
+|---|---:|---:|---|
+| BERTc | SentencePiece | 12,535 | 逐字模式 |
+| Summer | Piece BPE | 81,903 | 内置 350,000 词词典 |
+
 ## 构建
 
-需要 CMake 3.14+、C++17。
+从源码构建需要 CMake 3.14+、C++17。建议使用 Release 模式：
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build
+cmake --build build -j
+./build/piece_tokenizer_test
 uv pip install .          # 从源码构建 Python 包
 ```
 
-## 快速开始
+## 命令行与训练
 
 ```bash
 # 数据：下载中英文维基、分句 → cn_sentences.txt / en_sentences.txt
@@ -169,6 +187,9 @@ tok.vocab_size(); tok.method
 ```
 
 Byte-level BPE 的单个 piece 可能只是 UTF-8 字符的一部分，因此不保证能表示为 Python `str`。`encode()`、`encode_as_pieces()` 适用于 UTF-8 完整的 piece；处理任意文本或检查词表时，使用 `encode_bytes()`、`encode_as_piece_bytes()` 和 `id_to_piece_bytes()` 获取无损字节。
+
+完整接口与自定义模型示例见 [API.md](API.md)，从零训练 BERTc/Summer 的流程见
+[TUTORIAL.md](TUTORIAL.md)。
 
 ## 原理文档
 
