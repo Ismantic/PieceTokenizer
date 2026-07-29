@@ -184,7 +184,7 @@ bool SentencePieceCounter::LoadSentences() {
         size_t old_size = sentences_.size();
         sentences_.erase(
             std::remove_if(sentences_.begin(), sentences_.end(),
-                           [](const Sentence& s) {
+                           [kMaxTokenBytes](const Sentence& s) {
                              return s.first.size() > kMaxTokenBytes;
                            }),
             sentences_.end());

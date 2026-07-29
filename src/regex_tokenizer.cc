@@ -657,7 +657,7 @@ public:
                  }) {
         const uint32_t space_cp = DecodeSingle(space);
         regex_.Freeze({
-            space_cp, U'中', U'文', '0', '1', 'a', 'b', '\'', ',', '!',
+            space_cp, U'\u4E2D', U'\u6587', '0', '1', 'a', 'b', '\'', ',', '!',
         });
     }
 
